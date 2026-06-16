@@ -10,6 +10,8 @@ class IntegrationHealthCheckService
 {
     public function __construct(
         private readonly IntegrationCredentialsResolver $credentialsResolver,
+        private readonly DockerMonitoringService $dockerMonitoringService,
+        private readonly NvrMonitoringService $nvrMonitoringService,
     ) {
     }
 
@@ -22,6 +24,8 @@ class IntegrationHealthCheckService
         try {
             return match ($integration->type) {
                 'proxmox' => $this->testProxmox($integration->base_url, $credentials, $verifySsl),
+                'docker' => $this->dockerMonitoringService->check($integration),
+                'nvr' => $this->nvrMonitoringService->check($integration),
                 'custom_api' => $this->testCustomApi($integration->base_url, $credentials, $config),
                 default => [
                     'success' => false,
@@ -211,7 +215,9 @@ class IntegrationHealthCheckService
             'verify_ssl' => $verifySsl,
             'health_endpoint' => $integration->type === 'proxmox'
                 ? rtrim($integration->base_url, '/').'/api2/json/version'
-                : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health'),
+                : ($integration->type === 'docker'
+                    ? rtrim($integration->base_url, '/').'/_ping'
+                    : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health')),
             'api_reachable' => false,
             'auth_status' => str_contains($messageLower, 'auth')
                 || str_contains($messageLower, 'token')
@@ -220,8 +226,12 @@ class IntegrationHealthCheckService
                 ? 'failed'
                 : 'unknown',
             'latency_ms' => null,
-            'health_method' => $integration->config['health_method'] ?? 'GET',
-            'expected_status' => $integration->config['health_expected_status'] ?? 200,
+            'health_method' => $integration->type === 'docker'
+                ? 'GET'
+                : ($integration->config['health_method'] ?? 'GET'),
+            'expected_status' => $integration->type === 'docker'
+                ? 200
+                : ($integration->config['health_expected_status'] ?? 200),
         ];
     }
 }

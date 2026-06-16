@@ -189,7 +189,7 @@ function printLabel() {
                 </section>
 
                 <aside class="space-y-6 xl:self-start">
-                    <section class="panel-subtle p-5 xl:sticky xl:top-28">
+                    <section class="panel-subtle p-5">
                         <div class="eyebrow">Record Info</div>
                         <div class="data-list mt-5">
                             <div class="data-list__row">

@@ -32,6 +32,10 @@ function selectSite(siteId) {
             v-show="!canvasFullscreen"
             :title="topologyMode === 'proxmox'
                 ? 'Proxmox Topology'
+                : topologyMode === 'docker'
+                    ? 'Docker Topology'
+                : topologyMode === 'nvr'
+                    ? 'NVR Topology'
                 : topologyMode === 'network'
                     ? 'Network Topology'
                     : 'Infrastructure Topology'"
@@ -39,6 +43,10 @@ function selectSite(siteId) {
                 ? 'Network map by floor and room with uplink connections between devices.'
                 : topologyMode === 'proxmox'
                     ? 'Proxmox hypervisor integration and VM/CT workloads for this site.'
+                    : topologyMode === 'docker'
+                        ? 'Docker host integrations and container workloads for this site.'
+                    : topologyMode === 'nvr'
+                        ? 'NVR integrations and CCTV camera streams for this site.'
                     : 'Physical inventory assets mapped by site and location.'"
             eyebrow="Topology View"
         >
@@ -56,6 +64,18 @@ function selectSite(siteId) {
                     class="status-chip"
                 >
                     {{ topologyGraph.meta.guestCount }} workloads
+                </span>
+                <span
+                    v-else-if="topologyMode === 'docker' && topologyGraph.meta?.containerCount != null"
+                    class="status-chip"
+                >
+                    {{ topologyGraph.meta.containerCount }} containers
+                </span>
+                <span
+                    v-else-if="topologyMode === 'nvr' && topologyGraph.meta?.cameraCount != null"
+                    class="status-chip"
+                >
+                    {{ topologyGraph.meta.cameraCount }} cameras
                 </span>
                 <span
                     v-else-if="topologyMode === 'infrastructure' && topologyGraph.meta?.locationCount"

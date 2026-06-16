@@ -24,6 +24,7 @@ const form = useForm({
         health_method: props.integration.config?.health_method ?? 'GET',
         health_expected_status: props.integration.config?.health_expected_status ?? 200,
         host_asset_id: props.integration.config?.host_asset_id ?? '',
+        username: props.integration.config?.username ?? '',
     },
     is_active: props.integration.is_active,
 });
@@ -58,8 +59,10 @@ const selectedVaultEntry = computed(() => (
 ));
 
 const isProxmox = computed(() => props.integration.type === 'proxmox');
+const isDocker = computed(() => props.integration.type === 'docker');
+const isNvr = computed(() => props.integration.type === 'nvr');
 const requiresVaultEntry = computed(() => (
-    isProxmox.value || form.config.auth_mode === 'bearer'
+    isProxmox.value || isNvr.value || form.config.auth_mode === 'bearer'
 ));
 
 const hostAssetOptions = computed(() => (
@@ -75,10 +78,11 @@ function submit() {
         config: {
             verify_ssl: data.config.verify_ssl,
             auth_mode: data.config.auth_mode,
-            health_path: data.config.health_path,
-            health_method: data.config.health_method,
-            health_expected_status: Number(data.config.health_expected_status || 200),
+            health_path: isDocker.value || isNvr.value ? (isDocker.value ? '/_ping' : '/ISAPI/System/status') : data.config.health_path,
+            health_method: isDocker.value || isNvr.value ? 'GET' : data.config.health_method,
+            health_expected_status: isDocker.value || isNvr.value ? 200 : Number(data.config.health_expected_status || 200),
             host_asset_id: data.config.host_asset_id || null,
+            username: isNvr.value ? data.config.username : '',
         },
         is_active: data.is_active,
     })).put(route('integrations.update', props.integration.id));
@@ -165,7 +169,7 @@ function submit() {
                         <p v-if="form.errors.base_url" class="form-error">{{ form.errors.base_url }}</p>
                     </div>
 
-                    <div v-if="isProxmox">
+                    <div v-if="isProxmox || isNvr">
                         <label class="form-label" for="host-asset">Host Machine (Inventory)</label>
                         <select
                             id="host-asset"
@@ -184,9 +188,29 @@ function submit() {
                         <p v-if="form.errors['config.host_asset_id']" class="form-error">{{ form.errors['config.host_asset_id'] }}</p>
                     </div>
 
-                    <div v-if="!isProxmox" class="divider text-caption">API Health</div>
+                    <!-- NVR credentials -->
+                    <div v-if="isNvr" class="divider text-caption">NVR Access</div>
 
-                    <div v-if="!isProxmox" class="grid gap-5 sm:grid-cols-2">
+                    <div v-if="isNvr">
+                        <label class="form-label" for="nvr-username">Camera Username</label>
+                        <input
+                            id="nvr-username"
+                            v-model="form.config.username"
+                            type="text"
+                            placeholder="admin"
+                            class="input mt-2 w-full"
+                            :class="{ 'input-error': form.errors['config.username'] }"
+                            required
+                        />
+                        <p class="text-body-sm text-muted mt-2">
+                            Hikvision ISAPI login username. The password must be stored in a vault entry.
+                        </p>
+                        <p v-if="form.errors['config.username']" class="form-error">{{ form.errors['config.username'] }}</p>
+                    </div>
+
+                    <div v-if="!isProxmox && !isNvr" class="divider text-caption">{{ isDocker ? 'Docker Access' : 'API Health' }}</div>
+
+                    <div v-if="!isProxmox && !isDocker && !isNvr" class="grid gap-5 sm:grid-cols-2">
                         <div>
                             <label class="form-label" for="health-path">Health Path</label>
                             <input
@@ -232,6 +256,20 @@ function submit() {
                         </div>
                     </div>
 
+                    <div v-if="isDocker" class="grid gap-5 sm:grid-cols-2">
+                        <div>
+                            <label class="form-label" for="auth-mode">Auth Mode</label>
+                            <select id="auth-mode" v-model="form.config.auth_mode" class="select mt-2 w-full">
+                                <option value="none">None</option>
+                                <option value="bearer">Bearer Token</option>
+                            </select>
+                        </div>
+
+                        <div class="rounded-xl border border-hairline bg-base-300 px-4 py-4 text-body-sm text-muted">
+                            Docker monitoring stays read-only and uses the built-in ping, container list, inspect, and stats endpoints.
+                        </div>
+                    </div>
+
                     <div>
                         <label class="form-label" for="integration-vault-entry">Vault Secret</label>
                         <select
@@ -257,7 +295,7 @@ function submit() {
                     <label class="mt-2 flex items-center gap-3 cursor-pointer">
                         <input v-model="form.config.verify_ssl" type="checkbox" class="checkbox checkbox-primary" />
                         <span class="text-body-sm text-muted">
-                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : 'Verify SSL certificate during API health checks' }}
+                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : (isDocker ? 'Verify SSL certificate during Docker API checks' : (isNvr ? 'Verify SSL certificate during NVR API checks' : 'Verify SSL certificate during API health checks')) }}
                         </span>
                     </label>
 
@@ -283,7 +321,11 @@ function submit() {
                     <p class="text-body-sm text-muted mt-3">
                         {{ isProxmox
                             ? 'Proxmox integrations read their token from vault, so rotation should happen on the secret entry rather than in this form.'
-                            : 'Custom API integrations let you target any service health endpoint, including Node-based apps with bearer token auth.' }}
+                            : (isNvr
+                                ? 'NVR integrations use HTTP Digest auth. Username is stored in this form, password comes from the attached vault entry as a generic secret.'
+                                : (isDocker
+                                    ? 'Docker integrations assume one host endpoint and keep monitoring read-only. If you use auth in front of Docker, rotate the bearer token in vault.'
+                                    : 'Custom API integrations let you target any service health endpoint, including Node-based apps with bearer token auth.')) }}
                     </p>
 
                     <div v-if="selectedVaultEntry" class="mt-5 rounded-lg border border-hairline bg-base-300 px-4 py-4">

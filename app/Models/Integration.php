@@ -45,6 +45,8 @@ class Integration extends Model
      */
     public const TYPES = [
         'proxmox' => 'Proxmox VE',
+        'docker' => 'Docker Engine',
+        'nvr' => 'Hikvision NVR',
         'custom_api' => 'Custom API',
     ];
 

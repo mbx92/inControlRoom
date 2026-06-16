@@ -24,6 +24,7 @@ const form = useForm({
         health_method: 'GET',
         health_expected_status: 200,
         host_asset_id: '',
+        username: '',
     },
 });
 
@@ -32,8 +33,10 @@ const selectedVaultEntry = computed(() => (
 ));
 
 const isProxmox = computed(() => form.type === 'proxmox');
+const isDocker = computed(() => form.type === 'docker');
+const isNvr = computed(() => form.type === 'nvr');
 const requiresVaultEntry = computed(() => (
-    isProxmox.value || form.config.auth_mode === 'bearer'
+    isProxmox.value || isNvr.value || form.config.auth_mode === 'bearer'
 ));
 
 const hostAssetOptions = computed(() => (
@@ -41,13 +44,17 @@ const hostAssetOptions = computed(() => (
 ));
 
 const pageTitle = computed(() => (
-    isProxmox.value ? 'Add Integration' : 'Add Custom API'
+    isProxmox.value ? 'Add Integration' : (isDocker.value ? 'Add Docker Host' : (isNvr.value ? 'Add Hikvision NVR' : 'Add Custom API'))
 ));
 
 const pageSubtitle = computed(() => (
     isProxmox.value
         ? 'Register a Proxmox endpoint and attach it to an internal vault secret instead of typing credentials inline.'
-        : 'Register any API-based system, define its health endpoint, and optionally attach a bearer token from vault.'
+        : (isDocker.value
+            ? 'Register a Docker Engine endpoint for read-only health checks, container inventory, and lightweight runtime metrics.'
+            : (isNvr.value
+                ? 'Register a Hikvision NVR endpoint to monitor camera channels, recording status, and generate RTSP stream links.'
+                : 'Register any API-based system, define its health endpoint, and optionally attach a bearer token from vault.'))
 ));
 
 function submit() {
@@ -58,10 +65,11 @@ function submit() {
         config: {
             verify_ssl: data.config.verify_ssl,
             auth_mode: data.config.auth_mode,
-            health_path: data.config.health_path,
-            health_method: data.config.health_method,
-            health_expected_status: Number(data.config.health_expected_status || 200),
+            health_path: isDocker.value || isNvr.value ? (isDocker.value ? '/_ping' : '/ISAPI/System/status') : data.config.health_path,
+            health_method: isDocker.value || isNvr.value ? 'GET' : data.config.health_method,
+            health_expected_status: isDocker.value || isNvr.value ? 200 : Number(data.config.health_expected_status || 200),
             host_asset_id: data.config.host_asset_id || null,
+            username: isNvr.value ? data.config.username : '',
         },
     })).post(route('integrations.store'));
 }
@@ -107,7 +115,7 @@ function submit() {
                             id="integration-name"
                             v-model="form.name"
                             type="text"
-                            :placeholder="isProxmox ? 'Production Proxmox' : 'Node API Production'"
+                            :placeholder="isProxmox ? 'Production Proxmox' : (isDocker ? 'Docker Host Production' : 'Node API Production')"
                             class="input mt-2 w-full"
                             :class="{ 'input-error': form.errors.name }"
                             required
@@ -140,7 +148,7 @@ function submit() {
                             id="integration-base-url"
                             v-model="form.base_url"
                             type="url"
-                            :placeholder="isProxmox ? 'https://proxmox.example.com:8006' : 'https://api.example.com'"
+                            :placeholder="isProxmox ? 'https://proxmox.example.com:8006' : (isDocker ? 'https://docker.example.com:2376' : (isNvr ? 'http://192.168.1.64' : 'https://api.example.com'))"
                             class="input mt-2 w-full font-mono-num"
                             :class="{ 'input-error': form.errors.base_url }"
                             required
@@ -148,7 +156,7 @@ function submit() {
                         <p v-if="form.errors.base_url" class="form-error">{{ form.errors.base_url }}</p>
                     </div>
 
-                    <div v-if="isProxmox">
+                    <div v-if="isProxmox || isNvr">
                         <label class="form-label" for="host-asset">Host Machine (Inventory)</label>
                         <select
                             id="host-asset"
@@ -162,14 +170,34 @@ function submit() {
                             </option>
                         </select>
                         <p class="text-body-sm text-muted mt-2">
-                            Link this Proxmox instance to the physical machine it runs on (e.g. Mini PC). Used in topology view.
+                            {{ isProxmox ? 'Link this Proxmox instance to the physical machine it runs on (e.g. Mini PC). Used in topology view.' : 'Link this NVR to its physical device record in inventory. Used in topology view.' }}
                         </p>
                         <p v-if="form.errors['config.host_asset_id']" class="form-error">{{ form.errors['config.host_asset_id'] }}</p>
                     </div>
 
-                    <div v-if="!isProxmox" class="divider text-caption">API Health</div>
+                    <!-- NVR credentials -->
+                    <div v-if="isNvr" class="divider text-caption">NVR Access</div>
 
-                    <div v-if="!isProxmox" class="grid gap-5 sm:grid-cols-2">
+                    <div v-if="isNvr">
+                        <label class="form-label" for="nvr-username">Camera Username</label>
+                        <input
+                            id="nvr-username"
+                            v-model="form.config.username"
+                            type="text"
+                            placeholder="admin"
+                            class="input mt-2 w-full"
+                            :class="{ 'input-error': form.errors['config.username'] }"
+                            required
+                        />
+                        <p class="text-body-sm text-muted mt-2">
+                            Hikvision ISAPI login username. The password must be stored in a vault entry.
+                        </p>
+                        <p v-if="form.errors['config.username']" class="form-error">{{ form.errors['config.username'] }}</p>
+                    </div>
+
+                    <div v-if="!isProxmox && !isNvr" class="divider text-caption">{{ isDocker ? 'Docker Access' : 'API Health' }}</div>
+
+                    <div v-if="!isProxmox && !isDocker && !isNvr" class="grid gap-5 sm:grid-cols-2">
                         <div>
                             <label class="form-label" for="health-path">Health Path</label>
                             <input
@@ -216,6 +244,20 @@ function submit() {
                         </div>
                     </div>
 
+                    <div v-if="isDocker" class="grid gap-5 sm:grid-cols-2">
+                        <div>
+                            <label class="form-label" for="auth-mode">Auth Mode</label>
+                            <select id="auth-mode" v-model="form.config.auth_mode" class="select mt-2 w-full">
+                                <option value="none">None</option>
+                                <option value="bearer">Bearer Token</option>
+                            </select>
+                        </div>
+
+                        <div class="rounded-xl border border-hairline bg-base-300 px-4 py-4 text-body-sm text-muted">
+                            Docker MVP reads only <span class="text-body font-mono-num">/_ping</span>, <span class="text-body font-mono-num">/containers/json</span>, <span class="text-body font-mono-num">/containers/{id}/json</span>, and <span class="text-body font-mono-num">/containers/{id}/stats?stream=false</span>.
+                        </div>
+                    </div>
+
                     <div>
                         <label class="form-label" for="integration-vault-entry">Vault Secret</label>
                         <select
@@ -233,7 +275,11 @@ function submit() {
                         <p class="text-body-sm text-muted mt-2">
                             {{ isProxmox
                                 ? 'Proxmox always requires a vault entry containing its API token.'
-                                : 'Optional for open health endpoints. Required only when auth mode uses a bearer token.' }}
+                                : (isNvr
+                                    ? 'Hikvision NVR requires a vault entry containing the camera password (stored as generic secret).'
+                                    : (isDocker
+                                        ? 'Optional for open Docker endpoints. Required only when your proxy expects a bearer token.'
+                                        : 'Optional for open health endpoints. Required only when auth mode uses a bearer token.')) }}
                         </p>
                         <p v-if="form.errors.vault_entry_id" class="form-error">{{ form.errors.vault_entry_id }}</p>
                     </div>
@@ -241,7 +287,7 @@ function submit() {
                     <label class="mt-2 flex items-center gap-3 cursor-pointer">
                         <input v-model="form.config.verify_ssl" type="checkbox" class="checkbox checkbox-primary" />
                         <span class="text-body-sm text-muted">
-                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : 'Verify SSL certificate during API health checks' }}
+                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : (isDocker ? 'Verify SSL certificate during Docker API checks' : (isNvr ? 'Verify SSL certificate during NVR API checks' : 'Verify SSL certificate during API health checks')) }}
                         </span>
                     </label>
 
@@ -267,7 +313,11 @@ function submit() {
                     <p class="text-body-sm text-muted mt-3">
                         {{ isProxmox
                             ? 'Choose a vault-backed API token and InfraControl will use it for inventory plus API health checks.'
-                            : 'Use Custom API for Node services or other internal systems where the main need is endpoint reachability and authentication health.' }}
+                            : (isNvr
+                                ? 'Enter the camera username and attach a vault entry with the password. InfraControl will use Hikvision ISAPI for health checks, channel inventory, and recording status.'
+                                : (isDocker
+                                    ? 'Use Docker for a single host endpoint when the main need is container health, runtime inventory, and basic CPU/memory telemetry.'
+                                    : 'Use Custom API for Node services or other internal systems where the main need is endpoint reachability and authentication health.')) }}
                     </p>
 
                     <div v-if="selectedVaultEntry" class="mt-5 rounded-lg border border-hairline bg-base-300 px-4 py-4">
@@ -283,7 +333,11 @@ function submit() {
                             <div>
                                 <div class="text-caption text-muted">Health Strategy</div>
                                 <p class="text-body-sm text-muted mt-2">
-                                    Point health checks to a stable endpoint such as <span class="text-body font-mono-num">/health</span> or <span class="text-body font-mono-num">/api/health</span>.
+                                    {{ isDocker
+                                        ? 'Point this integration to a read-only Docker API or proxy endpoint. The built-in health probe always targets /_ping.'
+                                        : (isNvr
+                                            ? 'Point this integration to your Hikvision NVR IP address (e.g., http://192.168.1.64). Health probe uses /ISAPI/System/status.'
+                                            : 'Point health checks to a stable endpoint such as /health or /api/health.') }}
                                 </p>
                             </div>
                         </div>

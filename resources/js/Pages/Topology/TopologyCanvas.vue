@@ -8,6 +8,10 @@ import { MiniMap } from '@vue-flow/minimap';
 import SiteGroupNode from './nodes/SiteGroupNode.vue';
 import ProxmoxIntegrationNode from './nodes/ProxmoxIntegrationNode.vue';
 import ProxmoxGuestNode from './nodes/ProxmoxGuestNode.vue';
+import DockerIntegrationNode from './nodes/DockerIntegrationNode.vue';
+import DockerContainerNode from './nodes/DockerContainerNode.vue';
+import NvrIntegrationNode from './nodes/NvrIntegrationNode.vue';
+import CctvCameraNode from './nodes/CctvCameraNode.vue';
 import FloorGroupNode from './nodes/FloorGroupNode.vue';
 import LocationGroupNode from './nodes/LocationGroupNode.vue';
 import RoomGroupNode from './nodes/RoomGroupNode.vue';
@@ -39,6 +43,8 @@ const canEditLayout = computed(() => page.props.auth.permissions?.is_admin ?? fa
 const MODES = [
     { id: 'infrastructure', label: 'Infrastructure', description: 'Physical assets by site and location' },
     { id: 'proxmox', label: 'Proxmox', description: 'Hypervisor with VM / CT workloads' },
+    { id: 'docker', label: 'Docker', description: 'Docker host with container workloads' },
+    { id: 'nvr', label: 'NVR', description: 'NVR with CCTV camera streams' },
     { id: 'network', label: 'Network', description: 'Floor / room / uplink links' },
 ];
 
@@ -51,8 +57,11 @@ const GROUP_DRAG_TYPES = new Set(['floor-group']);
 
 const OFFLINE_EDGE_COLOR = '#F6465D';
 const LAYOUT_ORIGIN_Y = 24;
-const VIRTUAL_PINNED_NODE_TYPES = new Set(['proxmox-guest']);
+const VIRTUAL_PINNED_NODE_TYPES = new Set(['proxmox-guest', 'docker-container', 'cctv-camera']);
 const MEMBERSHIP_EDGE_COLOR = '#707A8A';
+const VIRTUAL_INTEGRATION_TYPES = new Set(['proxmox-integration', 'docker-integration', 'nvr-integration']);
+const VIRTUAL_WORKLOAD_TYPES = new Set(['proxmox-guest', 'docker-container', 'cctv-camera']);
+const FULL_VIRTUAL_MODES = new Set(['proxmox', 'docker', 'nvr']);
 
 const NODE_WIDTH = {
     'site-group': 280,
@@ -63,6 +72,10 @@ const NODE_WIDTH = {
     'inventory-asset': 260,
     'proxmox-integration': 228,
     'proxmox-guest': 186,
+    'docker-integration': 228,
+    'docker-container': 206,
+    'nvr-integration': 228,
+    'cctv-camera': 206,
 };
 
 const NODE_HEIGHT = {
@@ -74,6 +87,10 @@ const NODE_HEIGHT = {
     'inventory-asset': 40,
     'proxmox-integration': 58,
     'proxmox-guest': 56,
+    'docker-integration': 58,
+    'docker-container': 56,
+    'nvr-integration': 58,
+    'cctv-camera': 56,
 };
 
 const NETWORK_ROLE_PRIORITY = {
@@ -101,6 +118,10 @@ const nodeTypes = {
     'location-group': markRaw(LocationGroupNode),
     'proxmox-integration': markRaw(ProxmoxIntegrationNode),
     'proxmox-guest': markRaw(ProxmoxGuestNode),
+    'docker-integration': markRaw(DockerIntegrationNode),
+    'docker-container': markRaw(DockerContainerNode),
+    'nvr-integration': markRaw(NvrIntegrationNode),
+    'cctv-camera': markRaw(CctvCameraNode),
     'category-group': markRaw(CategoryGroupNode),
     'floor-group': markRaw(FloorGroupNode),
     'room-group': markRaw(RoomGroupNode),
@@ -174,8 +195,8 @@ function savedPositions() {
 
 function shouldPersistNode(node) {
     if (PINNED_NODE_TYPES.has(node.type)) return false;
-    if (props.mode !== 'proxmox' && VIRTUAL_PINNED_NODE_TYPES.has(node.type)) return false;
-    if (props.mode !== 'proxmox' && isHostLinkedProxmox(node)) return false;
+    if (!FULL_VIRTUAL_MODES.has(props.mode) && VIRTUAL_PINNED_NODE_TYPES.has(node.type)) return false;
+    if (!FULL_VIRTUAL_MODES.has(props.mode) && isHostLinkedProxmox(node)) return false;
     return true;
 }
 
@@ -222,8 +243,10 @@ async function persistLayout(positions = null) {
             };
             return true;
         }
-    } catch {
-        // ignore transient failures
+
+        console.error('[Topology] Layout save returned status', res.status, res.statusText);
+    } catch (err) {
+        console.error('[Topology] Layout save failed:', err);
     } finally {
         isSavingLayout.value = false;
     }
@@ -240,6 +263,8 @@ function nW(node) {
 function nH(node) { return NODE_HEIGHT[node.type] ?? 44; }
 function nodeCenterX(node) { return node.position.x + nW(node) / 2; }
 function isHostLinkedProxmox(node) { return node.type === 'proxmox-integration' && Boolean(node.data?.hostNodeId); }
+function isVirtualIntegration(node) { return VIRTUAL_INTEGRATION_TYPES.has(node?.type); }
+function isVirtualWorkload(node) { return VIRTUAL_WORKLOAD_TYPES.has(node?.type); }
 
 /**
  * In 'proxmox' mode, guest nodes are freely draggable so their handles must be
@@ -247,13 +272,13 @@ function isHostLinkedProxmox(node) { return node.type === 'proxmox-integration' 
  */
 function isPinnedLayoutNode(node, mode) {
     if (PINNED_NODE_TYPES.has(node.type)) return true;
-    if (mode === 'proxmox') return false;
+    if (FULL_VIRTUAL_MODES.has(mode)) return false;
     return VIRTUAL_PINNED_NODE_TYPES.has(node.type) || isHostLinkedProxmox(node);
 }
 
 function getSortedVirtualGuests(nodes_) {
     return nodes_
-        .filter((node) => node.type === 'proxmox-guest')
+        .filter((node) => isVirtualWorkload(node))
         .sort((a, b) => {
             const aVmid = Number(a.data?.vmid ?? Number.MAX_SAFE_INTEGER);
             const bVmid = Number(b.data?.vmid ?? Number.MAX_SAFE_INTEGER);
@@ -262,14 +287,19 @@ function getSortedVirtualGuests(nodes_) {
         });
 }
 
+function getVirtualWorkloadsForIntegration(nodes_, integrationId) {
+    return getSortedVirtualGuests(nodes_)
+        .filter((node) => node.data?.integrationNodeId === integrationId);
+}
+
 function layoutRank(node) {
     if (node.type === 'site-group') return -500;
     if (node.type === 'floor-group') return -400;
     if (node.type === 'location-group') return -350;
     if (node.type === 'room-group') return -300;
     if (node.type === 'category-group') return -250;
-    if (node.type === 'proxmox-integration') return -200;
-    if (node.type === 'proxmox-guest') return -100;
+    if (isVirtualIntegration(node)) return -200;
+    if (isVirtualWorkload(node)) return -100;
 
     if (node.type === 'inventory-asset') {
         const role = String(node.data?.networkRole ?? '').toLowerCase();
@@ -309,7 +339,8 @@ function buildVirtualBranchPositions({ proxmox, guests, metrics, host = null }) 
         [proxmox.id]: { x: proxmoxX, y: proxmoxY },
     };
 
-    const guestX = proxmoxX + Math.max(0, (nW(proxmox) - NODE_WIDTH['proxmox-guest']) / 2);
+    const guestWidth = guests[0] ? nW(guests[0]) : NODE_WIDTH['proxmox-guest'];
+    const guestX = proxmoxX + Math.max(0, (nW(proxmox) - guestWidth) / 2);
     let guestY = proxmoxY + nH(proxmox) + metrics.virtualTierGap;
 
     for (const guest of guests) {
@@ -323,7 +354,9 @@ function buildVirtualBranchPositions({ proxmox, guests, metrics, host = null }) 
 function virtualBranchExtraWidth(proxmoxNode, guestCount, metrics) {
     if (!proxmoxNode) return 0;
     const branchW = metrics.virtualHostGap + nW(proxmoxNode);
-    const guestStackW = NODE_WIDTH['proxmox-guest'];
+    const guestStackW = proxmoxNode.type === 'docker-integration'
+        ? NODE_WIDTH['docker-container']
+        : NODE_WIDTH['proxmox-guest'];
     return Math.max(branchW, guestStackW);
 }
 
@@ -333,9 +366,9 @@ const PROXMOX_GUEST_ROW_GAP = 16;
 /**
  * Total pixel width consumed by N guest cards placed in a row.
  */
-function guestRowWidth(count) {
+function guestRowWidth(count, nodeWidth = NODE_WIDTH['proxmox-guest']) {
     if (count <= 0) return 0;
-    return count * NODE_WIDTH['proxmox-guest'] + (count - 1) * PROXMOX_GUEST_ROW_GAP;
+    return count * nodeWidth + (count - 1) * PROXMOX_GUEST_ROW_GAP;
 }
 
 /**
@@ -344,8 +377,8 @@ function guestRowWidth(count) {
  */
 function placeGuestRow(guests, centerX, y) {
     if (!guests.length) return y;
-    const gW = NODE_WIDTH['proxmox-guest'];
-    let x = centerX - guestRowWidth(guests.length) / 2;
+    const gW = nW(guests[0]);
+    let x = centerX - guestRowWidth(guests.length, gW) / 2;
     for (const guest of guests) {
         guest.position = { x, y };
         guest.sourcePosition = Position.Bottom;
@@ -365,22 +398,37 @@ function placeGuestRow(guests, centerX, y) {
 function layoutProxmoxHierarchy(rawNodes) {
     const cloned = rawNodes.map((n) => ({ ...n, position: { x: 0, y: 0 } }));
     const metrics = getLayoutMetrics(cloned.length);
-    const site    = cloned.find((n) => n.type === 'site-group');
-    const proxmox = cloned.find((n) => n.type === 'proxmox-integration');
-    const allGuests = getSortedVirtualGuests(cloned);
+    const site = cloned.find((n) => n.type === 'site-group');
+    const integrations = cloned.filter((n) => isVirtualIntegration(n));
+    const startX = 40;
 
-    // Split by status: online first, offline/stopped below
-    const onlineGuests  = allGuests.filter((g) => g.data?.status === 'running');
-    const offlineGuests = allGuests.filter((g) => g.data?.status !== 'running');
+    const branches = integrations.map((integrationNode) => {
+        const workloads = getVirtualWorkloadsForIntegration(cloned, integrationNode.id);
+        const onlineGuests = workloads.filter((g) => g.data?.status === 'running');
+        const offlineGuests = workloads.filter((g) => g.data?.status !== 'running');
+        const guestWidth = workloads[0] ? nW(workloads[0]) : NODE_WIDTH['proxmox-guest'];
+        const branchWidth = Math.max(
+            nW(integrationNode),
+            guestRowWidth(onlineGuests.length, guestWidth),
+            guestRowWidth(offlineGuests.length, guestWidth),
+        );
 
-    const startX   = 40;
+        return {
+            integrationNode,
+            workloads,
+            onlineGuests,
+            offlineGuests,
+            guestWidth,
+            branchWidth,
+        };
+    });
+
     const contentW = Math.max(
         site ? nW(site) : 200,
-        proxmox ? nW(proxmox) : 0,
-        guestRowWidth(onlineGuests.length),
-        guestRowWidth(offlineGuests.length),
+        branches.reduce((sum, branch) => sum + branch.branchWidth, 0)
+            + Math.max(0, branches.length - 1) * metrics.colGap,
     );
-    const cx = startX + contentW / 2; // horizontal centre of the whole tree
+    const cx = startX + contentW / 2;
 
     let y = LAYOUT_ORIGIN_Y;
 
@@ -391,20 +439,26 @@ function layoutProxmoxHierarchy(rawNodes) {
         y += nH(site) + metrics.tierGap;
     }
 
-    if (proxmox) {
-        proxmox.position = { x: cx - nW(proxmox) / 2, y };
-        proxmox.sourcePosition = Position.Bottom;
-        proxmox.targetPosition = Position.Top;
-        y += nH(proxmox) + metrics.tierGap;
-    }
+    let branchX = startX;
+    for (const branch of branches) {
+        const branchCenterX = branchX + branch.branchWidth / 2;
+        let branchY = y;
 
-    if (onlineGuests.length) {
-        const rowBottom = placeGuestRow(onlineGuests, cx, y);
-        y = rowBottom + metrics.tierGap;
-    }
+        branch.integrationNode.position = { x: branchCenterX - nW(branch.integrationNode) / 2, y: branchY };
+        branch.integrationNode.sourcePosition = Position.Bottom;
+        branch.integrationNode.targetPosition = Position.Top;
+        branchY += nH(branch.integrationNode) + metrics.tierGap;
 
-    if (offlineGuests.length) {
-        placeGuestRow(offlineGuests, cx, y);
+        if (branch.onlineGuests.length) {
+            const rowBottom = placeGuestRow(branch.onlineGuests, branchCenterX, branchY);
+            branchY = rowBottom + metrics.tierGap;
+        }
+
+        if (branch.offlineGuests.length) {
+            placeGuestRow(branch.offlineGuests, branchCenterX, branchY);
+        }
+
+        branchX += branch.branchWidth + metrics.colGap;
     }
 
     return cloned;
@@ -417,52 +471,73 @@ function layoutProxmoxHierarchy(rawNodes) {
  */
 function relayoutProxmoxVertical(nodes_) {
     const metrics = getLayoutMetrics(nodes_.length);
-    const site    = nodes_.find((n) => n.type === 'site-group');
-    const proxmox = nodes_.find((n) => n.type === 'proxmox-integration');
-    const allGuests = getSortedVirtualGuests(nodes_);
+    const site = nodes_.find((n) => n.type === 'site-group');
+    const integrations = nodes_.filter((n) => isVirtualIntegration(n));
 
-    if (!proxmox || !site) return nodes_;
+    if (!integrations.length || !site) return nodes_;
 
-    const onlineGuests  = allGuests.filter((g) => g.data?.status === 'running');
-    const offlineGuests = allGuests.filter((g) => g.data?.status !== 'running');
+    const branches = integrations.map((integrationNode) => {
+        const workloads = getVirtualWorkloadsForIntegration(nodes_, integrationNode.id);
+        const onlineGuests = workloads.filter((g) => g.data?.status === 'running');
+        const offlineGuests = workloads.filter((g) => g.data?.status !== 'running');
+        const guestWidth = workloads[0] ? nW(workloads[0]) : NODE_WIDTH['proxmox-guest'];
+        const branchWidth = Math.max(
+            nW(integrationNode),
+            guestRowWidth(onlineGuests.length, guestWidth),
+            guestRowWidth(offlineGuests.length, guestWidth),
+        );
+
+        return {
+            integrationNode,
+            onlineGuests,
+            offlineGuests,
+            guestWidth,
+            branchWidth,
+        };
+    });
 
     const contentW = Math.max(
         nW(site),
-        nW(proxmox),
-        guestRowWidth(onlineGuests.length),
-        guestRowWidth(offlineGuests.length),
+        branches.reduce((sum, branch) => sum + branch.branchWidth, 0)
+            + Math.max(0, branches.length - 1) * metrics.colGap,
     );
     const cx = site.position.x + nW(site) / 2;
+    const startX = cx - contentW / 2;
 
-    let y = site.position.y + nH(site) + metrics.tierGap;
-
-    const positions = {
-        [proxmox.id]: { x: cx - nW(proxmox) / 2, y },
-    };
-
-    y += nH(proxmox) + metrics.tierGap;
-
-    const gW = NODE_WIDTH['proxmox-guest'];
+    const positions = {};
     const guestPositions = {};
+    let branchX = startX;
 
-    if (onlineGuests.length) {
-        let x = cx - guestRowWidth(onlineGuests.length) / 2;
-        for (const guest of onlineGuests) {
-            guestPositions[guest.id] = { x, y };
-            x += gW + PROXMOX_GUEST_ROW_GAP;
+    for (const branch of branches) {
+        const branchCenterX = branchX + branch.branchWidth / 2;
+        let branchY = site.position.y + nH(site) + metrics.tierGap;
+        positions[branch.integrationNode.id] = { x: branchCenterX - nW(branch.integrationNode) / 2, y: branchY };
+        branchY += nH(branch.integrationNode) + metrics.tierGap;
+
+        const gW = branch.onlineGuests[0]
+            ? nW(branch.onlineGuests[0])
+            : (branch.offlineGuests[0] ? nW(branch.offlineGuests[0]) : branch.guestWidth);
+
+        if (branch.onlineGuests.length) {
+            let x = branchCenterX - guestRowWidth(branch.onlineGuests.length, branch.guestWidth) / 2;
+            for (const guest of branch.onlineGuests) {
+                guestPositions[guest.id] = { x, y: branchY };
+                x += gW + PROXMOX_GUEST_ROW_GAP;
+            }
+            branchY += nH(branch.onlineGuests[0]) + metrics.tierGap;
         }
-        y += nH(onlineGuests[0]) + metrics.tierGap;
+
+        if (branch.offlineGuests.length) {
+            let x = branchCenterX - guestRowWidth(branch.offlineGuests.length, branch.guestWidth) / 2;
+            for (const guest of branch.offlineGuests) {
+                guestPositions[guest.id] = { x, y: branchY };
+                x += gW + PROXMOX_GUEST_ROW_GAP;
+            }
+        }
+
+        branchX += branch.branchWidth + metrics.colGap;
     }
 
-    if (offlineGuests.length) {
-        let x = cx - guestRowWidth(offlineGuests.length) / 2;
-        for (const guest of offlineGuests) {
-            guestPositions[guest.id] = { x, y };
-            x += gW + PROXMOX_GUEST_ROW_GAP;
-        }
-    }
-
-    void contentW; // used only for planning; cx drives centering
     return nodes_.map((node) => {
         if (positions[node.id])     return { ...node, position: { ...positions[node.id] } };
         if (guestPositions[node.id]) return { ...node, position: { ...guestPositions[node.id] } };
@@ -479,7 +554,7 @@ function getLayoutMetrics(count) {
             ? { tierGap: 68, assetGap: 46, colGap: 18, virtualHostGap: 64, virtualTierGap: 80, virtualGuestGap: 34, virtualDetachedGap: 88 }
             : { tierGap: 84, assetGap: 58, colGap: 24, virtualHostGap: 72, virtualTierGap: 96, virtualGuestGap: 48, virtualDetachedGap: 100 };
 
-    if (props.mode === 'proxmox') {
+    if (FULL_VIRTUAL_MODES.has(props.mode)) {
         return layout;
     }
 
@@ -492,14 +567,14 @@ function getLayoutMetrics(count) {
 }
 
 function layoutHierarchy(rawNodes) {
-    if (props.mode === 'proxmox') {
+    if (FULL_VIRTUAL_MODES.has(props.mode)) {
         return layoutProxmoxHierarchy(rawNodes);
     }
 
     const cloned = rawNodes.map((n) => ({ ...n, position: { x: 0, y: 0 } }));
     const metrics = getLayoutMetrics(cloned.length);
     const site    = cloned.find((n) => n.type === 'site-group');
-    const proxmox = cloned.find((n) => n.type === 'proxmox-integration');
+    const proxmox = cloned.find((n) => isVirtualIntegration(n));
     const guests  = getSortedVirtualGuests(cloned);
 
     // Build parent→children map
@@ -593,7 +668,10 @@ function layoutHierarchy(rawNodes) {
 
     // Add extra width for proxmox column when it must stand alone from the site branch.
     const proxExtraW = proxmox && !hostExists
-        ? Math.max(NODE_WIDTH['proxmox-integration'], NODE_WIDTH['proxmox-guest']) + metrics.virtualDetachedGap
+        ? Math.max(
+            nW(proxmox),
+            guests[0] ? nW(guests[0]) : NODE_WIDTH['proxmox-guest'],
+        ) + metrics.virtualDetachedGap
         : 0;
 
     const totalW = floorCols.reduce((s, c) => s + c.cw, 0)
@@ -680,8 +758,8 @@ function mergePositions(autoNodes) {
     return autoNodes.map((node) => {
         if (PINNED_NODE_TYPES.has(node.type)) return node;
         // In proxmox mode, guest positions may be user-saved — allow restoring them
-        if (props.mode !== 'proxmox' && VIRTUAL_PINNED_NODE_TYPES.has(node.type)) return node;
-        if (props.mode !== 'proxmox' && isHostLinkedProxmox(node)) return node;
+        if (!FULL_VIRTUAL_MODES.has(props.mode) && VIRTUAL_PINNED_NODE_TYPES.has(node.type)) return node;
+        if (!FULL_VIRTUAL_MODES.has(props.mode) && isHostLinkedProxmox(node)) return node;
 
         const s = saved[node.id];
         if (!s) return node;
@@ -750,7 +828,7 @@ function applyFlags(nodes_, mode) {
 function toFlowNodes(nodes_) {
     return nodes_
         .filter((n) => !PINNED_NODE_TYPES.has(n.type))
-        .map(({ parentId: _p, ...n }) => n);
+        .map(({ parentId: _p, ...n }) => ({ ...n, draggable: !isLocked.value }));
 }
 
 /**
@@ -828,7 +906,7 @@ function tidyBranchLayout(nodes_) {
         cursorX += nodeSpan(root) + rootGap;
     }
 
-    if (cloned.some((node) => node.type === 'proxmox-integration')) {
+    if (cloned.some((node) => isVirtualIntegration(node))) {
         return recalcVirtualBranch(cloned, Object.fromEntries(cloned.map((node) => [node.id, node])));
     }
 
@@ -841,8 +919,8 @@ function buildGraphNodes({ useSavedPositions = true, tidy = false } = {}) {
 
     const withSaved   = useSavedPositions ? mergePositions(auto) : auto;
     const withPinned  = recalcPinned(withSaved, autoById);
-    const hasVirtual  = withPinned.some((n) => n.type === 'proxmox-integration');
-    const withVirtual = props.mode === 'proxmox'
+    const hasVirtual  = withPinned.some((n) => isVirtualIntegration(n));
+    const withVirtual = FULL_VIRTUAL_MODES.has(props.mode)
         ? withPinned
         : hasVirtual
             ? recalcVirtualBranch(withPinned, autoById)
@@ -864,7 +942,7 @@ function recalcVirtualBranch(nodes_, autoById) {
     const metrics = getLayoutMetrics(nodes_.length);
     const byId = Object.fromEntries(nodes_.map((n) => [n.id, n]));
 
-    const proxmox = nodes_.find((n) => n.type === 'proxmox-integration');
+    const proxmox = nodes_.find((n) => isVirtualIntegration(n));
     if (!proxmox) return nodes_;
 
     const guests = getSortedVirtualGuests(nodes_);
@@ -898,7 +976,7 @@ function applyGraph() {
 
 function isNodeOffline(node) {
     if (!node?.data?.status) return false;
-    if (node.type === 'proxmox-guest') return node.data.status !== 'running';
+    if (node.type === 'proxmox-guest' || node.type === 'docker-container') return node.data.status !== 'running';
     if (node.type === 'inventory-asset') return node.data.status !== 'active';
     return false;
 }
@@ -1021,7 +1099,7 @@ function resolveRouting(edge, byId, routeOffset = 0) {
     // In proxmox mode: fan-out from proxmox bottom to each guest's top.
     // Use a generous borderRadius so the curves spread cleanly from a single
     // bottom handle across the horizontal row.
-    if (props.mode === 'proxmox') {
+    if (FULL_VIRTUAL_MODES.has(props.mode)) {
         return {
             type: 'smoothstep',
             sourceHandle: 'bottom',
@@ -1031,7 +1109,7 @@ function resolveRouting(edge, byId, routeOffset = 0) {
     }
 
     if (variant === 'physical' || variant === 'network' || variant === 'virtual') {
-        if (src.type === 'proxmox-integration' && tgt.type === 'proxmox-guest') {
+        if (isVirtualIntegration(src) && isVirtualWorkload(tgt)) {
             return {
                 type: 'smoothstep',
                 sourceHandle: 'bottom',
@@ -1316,12 +1394,12 @@ function rePinNodes() {
  */
 function rePinVirtual() {
     // In proxmox mode guests are freely draggable — no re-pinning needed.
-    if (props.mode === 'proxmox') return;
+    if (FULL_VIRTUAL_MODES.has(props.mode)) return;
 
     const metrics = getLayoutMetrics(pendingLayoutNodes.value.length);
     const liveById = Object.fromEntries(nodes.value.map((n) => [n.id, n]));
 
-    const proxmoxMeta = pendingLayoutNodes.value.find((n) => n.type === 'proxmox-integration');
+    const proxmoxMeta = pendingLayoutNodes.value.find((n) => isVirtualIntegration(n));
     const liveProx = proxmoxMeta ? liveById[proxmoxMeta.id] : null;
     const guests = getSortedVirtualGuests(nodes.value);
     const hostId = proxmoxMeta?.data?.hostNodeId ?? null;
@@ -1352,10 +1430,12 @@ function snapshotPositions() {
 }
 
 function onNodeDragStart() {
+    if (isLocked.value) return;
     snapshotPositions();
 }
 
 function onNodeDragStop({ node }) {
+    if (isLocked.value) return;
     applyGroupDrag(node);
     rePinNodes();
     rePinVirtual();
@@ -1364,10 +1444,12 @@ function onNodeDragStop({ node }) {
 }
 
 function onSelectionDragStart() {
+    if (isLocked.value) return;
     snapshotPositions();
 }
 
 function onSelectionDragStop({ nodes: draggedNodes }) {
+    if (isLocked.value) return;
     if (!draggedNodes?.length) return;
 
     // Only apply group drag for top-level dragged nodes in the hierarchy
@@ -1456,17 +1538,23 @@ async function tidyLayout() {
 
     pendingLayoutNodes.value = buildGraphNodes({
         useSavedPositions: false,
-        tidy: true,
+        tidy: props.mode !== 'docker',
     });
     nodes.value = toFlowNodes(pendingLayoutNodes.value);
 
+    // Wait for Vue to flush the node array replacement into VueFlow
     await nextTick();
     await nextTick();
     graphReady.value = true;
     commitEdges();
+    // Extra nextTick to let edges settle in the DOM before fitting view
+    await nextTick();
     scheduleFitView();
 
-    await persistLayout(collectPersistablePositionsFrom(nodes.value));
+    const saved = await persistLayout(collectPersistablePositionsFrom(nodes.value));
+    if (!saved) {
+        console.warn('[Topology] Tidy applied locally but positions were not persisted. They will reset on the next page load.');
+    }
 }
 
 // ─── Mode / UI handlers ───────────────────────────────────────────────────────
@@ -1485,6 +1573,8 @@ async function toggleLock() {
     if (!canEditLayout.value || isSavingLayout.value) return;
     isLocked.value = !isLocked.value;
     await persistLayout(collectPositions());
+    // Rebuild nodes so per-node draggable flags reflect the new lock state immediately
+    nodes.value = toFlowNodes(pendingLayoutNodes.value);
 }
 
 function toggleSelectionMode() {
@@ -1644,6 +1734,43 @@ onUnmounted(() => {
                                 No Proxmox integration for this site.
                             </div>
                         </template>
+                        <template v-else-if="mode === 'docker'">
+                            <div class="topology-legend__item">
+                                <span class="topology-legend__swatch topology-legend__swatch--docker" />
+                                Docker integration
+                            </div>
+                            <div class="topology-legend__item">
+                                <span class="topology-legend__swatch topology-legend__swatch--docker" />
+                                Container workloads
+                            </div>
+                            <div class="topology-legend__item">
+                                <span class="topology-legend__swatch topology-legend__swatch--offline" />
+                                Stopped container
+                            </div>
+                            <div v-if="!graphMeta.hasIntegration" class="topology-legend__note">
+                                No Docker integration for this site.
+                            </div>
+                        </template>
+                        <template v-else-if="mode === 'nvr'">
+                            <div class="topology-legend__item">
+                                <span class="topology-legend__swatch topology-legend__swatch--nvr" />
+                                NVR integration
+                            </div>
+                            <div class="topology-legend__item">
+                                <span class="topology-legend__swatch topology-legend__swatch--nvr" />
+                                CCTV camera stream
+                            </div>
+                            <div class="topology-legend__item">
+                                <span class="topology-legend__swatch topology-legend__swatch--offline" />
+                                Disabled camera
+                            </div>
+                            <div class="topology-legend__note">
+                                Only main stream channels are shown. Sub-stream channel 02 is hidden.
+                            </div>
+                            <div v-if="!graphMeta.hasIntegration" class="topology-legend__note">
+                                No NVR integration for this site.
+                            </div>
+                        </template>
                         <template v-else>
                             <div class="topology-legend__item">
                                 <span class="topology-legend__swatch topology-legend__swatch--physical" />
@@ -1674,6 +1801,8 @@ onUnmounted(() => {
                             <template v-if="!canEditLayout">Read-only layout.</template>
                             <template v-else-if="isLocked">Nodes locked — unlock to rearrange.</template>
                             <template v-else-if="selectionMode">Shift + drag to select.</template>
+                            <template v-else-if="mode === 'docker'">Site â†’ Docker host â†’ containers.</template>
+                            <template v-else-if="mode === 'nvr'">Site → NVR → cameras.</template>
                             <template v-else-if="mode === 'network'">Site → Floor → room → devices.</template>
                             <template v-else-if="mode === 'proxmox'">Site → Proxmox → VM/CT.</template>
                             <template v-else>Site → Location → devices.</template>
@@ -1869,6 +1998,8 @@ onUnmounted(() => {
 
 .topology-legend__swatch--physical  { background: #707A8A; }
 .topology-legend__swatch--virtual   { background: #F0B90B; }
+.topology-legend__swatch--docker    { background: #2496ED; }
+.topology-legend__swatch--nvr       { background: #F59E0B; }
 .topology-legend__swatch--network   { background: #3B82F6; }
 .topology-legend__swatch--membership { background: #707A8A; }
 .topology-legend__swatch--offline   { background: #F6465D; }
@@ -1999,7 +2130,10 @@ onUnmounted(() => {
     box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-primary, #FCD535) 40%, transparent);
 }
 
-.topology-flow--locked .vue-flow__node { cursor: default; }
+.topology-flow--locked .vue-flow__node {
+    cursor: default;
+    pointer-events: none;
+}
 
 .topology-flow .topology-node--pinned {
     cursor: default;

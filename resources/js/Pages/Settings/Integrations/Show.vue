@@ -15,6 +15,10 @@ const props = defineProps({
     proxmoxGuests: { type: Array, default: null },
     proxmoxSummary: { type: Object, default: null },
     proxmoxJournal: { type: Object, default: null },
+    dockerContainers: { type: Array, default: null },
+    dockerSummary: { type: Object, default: null },
+    nvrChannels: { type: Array, default: null },
+    nvrSummary: { type: Object, default: null },
 });
 
 const connectionHealth = computed(() => {
@@ -89,6 +93,10 @@ function formatUptime(seconds) {
     }
 
     return `${minutes}m`;
+}
+
+function shortId(value) {
+    return value ? String(value).slice(0, 12) : '—';
 }
 
 function activityBadgeClass(result) {
@@ -221,6 +229,75 @@ function goToPage(pageParam, page) {
                         <div class="text-caption text-muted mt-2">
                             of {{ formatBytes(proxmoxSummary.disk_total_bytes) }}
                         </div>
+                    </article>
+                </div>
+            </section>
+
+            <section
+                v-if="integration.type === 'docker' && dockerSummary"
+                class="panel-card p-4 sm:p-5"
+            >
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Containers</div>
+                        <div class="mt-3 flex items-end gap-2">
+                            <div class="text-number-sm text-body">{{ dockerSummary.container_total }}</div>
+                            <div class="text-caption text-muted">{{ dockerSummary.running_total }} running</div>
+                        </div>
+                        <div class="text-caption text-muted mt-2">{{ dockerSummary.stopped_total }} stopped</div>
+                    </article>
+
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Healthy Containers</div>
+                        <div class="text-number-sm text-body mt-3">{{ dockerSummary.healthy_total }}</div>
+                        <div class="text-caption text-muted mt-2">with explicit healthcheck</div>
+                    </article>
+
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Average CPU</div>
+                        <div class="text-title-sm text-body mt-3">
+                            {{ formatPercent(dockerSummary.cpu_usage_percent_avg) }}
+                        </div>
+                        <div class="text-caption text-muted mt-2">across visible containers</div>
+                    </article>
+
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Memory Footprint</div>
+                        <div class="text-title-sm text-body mt-3">
+                            {{ formatBytes(dockerSummary.memory_usage_bytes_total) }}
+                        </div>
+                        <div class="text-caption text-muted mt-2">current usage sum</div>
+                    </article>
+                </div>
+            </section>
+
+            <section
+                v-if="integration.type === 'nvr' && nvrSummary"
+                class="panel-card p-4 sm:p-5"
+            >
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Channels</div>
+                        <div class="mt-3 flex items-end gap-2">
+                            <div class="text-number-sm text-body">{{ nvrSummary.channel_total }}</div>
+                            <div class="text-caption text-muted">total</div>
+                        </div>
+                        <div class="text-caption text-muted mt-2">{{ nvrSummary.enabled_total }} enabled</div>
+                    </article>
+
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Recording</div>
+                        <div class="text-number-sm text-body mt-3">{{ nvrSummary.recording_total }}</div>
+                        <div class="text-caption text-muted mt-2">channels actively recording</div>
+                    </article>
+
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Status</div>
+                        <div class="mt-3 flex items-center gap-2">
+                            <span class="signal-dot signal-dot--live" />
+                            <span class="text-body-sm text-body">Connected</span>
+                        </div>
+                        <div class="text-caption text-muted mt-2">ISAPI reachable</div>
                     </article>
                 </div>
             </section>
@@ -381,6 +458,86 @@ function goToPage(pageParam, page) {
                     </section>
 
                     <section
+                        v-if="integration.type === 'docker' && integration.source_summary"
+                        class="panel-card p-6"
+                    >
+                        <div class="eyebrow">Platform Summary</div>
+                        <div class="mt-4 text-title-sm text-body">
+                            {{ integration.source_summary.headline }}
+                        </div>
+
+                        <div class="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">API Version</div>
+                                <div class="text-body-sm text-body mt-2 font-mono-num">
+                                    {{ integration.source_summary.api_version ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Containers</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.container_count ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Running</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.running_count ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Stopped</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.stopped_count ?? '—' }}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section
+                        v-if="integration.type === 'nvr' && integration.source_summary"
+                        class="panel-card p-6"
+                    >
+                        <div class="eyebrow">Platform Summary</div>
+                        <div class="mt-4 text-title-sm text-body">
+                            {{ integration.source_summary.headline }}
+                        </div>
+
+                        <div class="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Firmware</div>
+                                <div class="text-body-sm text-body mt-2 font-mono-num">
+                                    {{ integration.source_summary.firmware ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Channels</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.channel_count ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Recording</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.recording_count ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">SSL</div>
+                                <div class="text-body-sm text-body mt-2">
+                                    {{ integration.source_summary.verify_ssl === false ? 'Disabled' : 'Enabled' }}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section
                         v-if="integration.type === 'proxmox' && proxmoxGuests"
                         class="panel-card p-6"
                     >
@@ -462,6 +619,142 @@ function goToPage(pageParam, page) {
                                         </td>
                                         <td class="text-caption text-muted">
                                             {{ formatUptime(guest.uptime) }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section
+                        v-if="integration.type === 'docker' && dockerContainers"
+                        class="panel-card p-6"
+                    >
+                        <div class="flex items-center justify-between gap-4">
+                            <div>
+                                <div class="eyebrow">Container Estate</div>
+                                <h2 class="text-title-md text-body mt-2">Live Container Snapshot</h2>
+                            </div>
+
+                            <div class="status-chip">{{ dockerContainers.length }} containers</div>
+                        </div>
+
+                        <div class="mt-6 overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="border-hairline">
+                                        <th>Container</th>
+                                        <th>State</th>
+                                        <th>CPU</th>
+                                        <th>Memory</th>
+                                        <th>Restarts</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="container in dockerContainers"
+                                        :key="container.id"
+                                        class="border-hairline transition-default hover:bg-elevated/30"
+                                    >
+                                        <td>
+                                            <div class="text-body-sm text-body">
+                                                {{ container.name }}
+                                            </div>
+                                            <div class="text-caption text-muted mt-1">
+                                                {{ shortId(container.id) }} / {{ container.image ?? '—' }}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="status-chip">
+                                                <span
+                                                    class="signal-dot"
+                                                    :class="container.is_running ? 'signal-dot--live' : 'signal-dot--warning'"
+                                                />
+                                                {{ container.state }}
+                                            </span>
+                                            <div v-if="container.health" class="text-caption text-muted mt-1">
+                                                Health: {{ container.health }}
+                                            </div>
+                                        </td>
+                                        <td class="text-body-sm text-body">
+                                            {{ formatPercent(container.cpu_usage_percent) }}
+                                        </td>
+                                        <td class="text-body-sm text-body">
+                                            <div>{{ formatBytes(container.memory_usage_bytes) }}</div>
+                                            <div class="text-caption text-muted mt-1">
+                                                {{ formatPercent(container.memory_usage_percent) }}
+                                            </div>
+                                        </td>
+                                        <td class="text-body-sm text-body">
+                                            {{ container.restart_count !== null ? container.restart_count : '—' }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section
+                        v-if="integration.type === 'nvr' && nvrChannels"
+                        class="panel-card p-6"
+                    >
+                        <div class="flex items-center justify-between gap-4">
+                            <div>
+                                <div class="eyebrow">Channel Estate</div>
+                                <h2 class="text-title-md text-body mt-2">Live Channel Snapshot</h2>
+                            </div>
+
+                            <div class="status-chip">{{ nvrChannels.length }} channels</div>
+                        </div>
+
+                        <div class="mt-6 overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="border-hairline">
+                                        <th>Channel</th>
+                                        <th>State</th>
+                                        <th>Recording</th>
+                                        <th>Resolution</th>
+                                        <th>Codec</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="channel in nvrChannels"
+                                        :key="channel.id"
+                                        class="border-hairline transition-default hover:bg-elevated/30"
+                                    >
+                                        <td>
+                                            <div class="text-body-sm text-body">
+                                                {{ channel.name }}
+                                            </div>
+                                            <div class="text-caption text-muted mt-1">
+                                                Channel {{ channel.id }}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="status-chip">
+                                                <span
+                                                    class="signal-dot"
+                                                    :class="channel.enabled ? 'signal-dot--live' : 'signal-dot--warning'"
+                                                />
+                                                {{ channel.enabled ? 'Enabled' : 'Disabled' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="status-chip">
+                                                <span
+                                                    class="signal-dot"
+                                                    :class="channel.is_recording ? 'signal-dot--live' : 'signal-dot--warning'"
+                                                />
+                                                {{ channel.is_recording ? (channel.recording_type ?? 'Recording') : 'Idle' }}
+                                            </span>
+                                        </td>
+                                        <td class="text-body-sm text-body font-mono-num">
+                                            {{ channel.video_resolution ?? '—' }}
+                                        </td>
+                                        <td class="text-body-sm text-body">
+                                            {{ channel.video_codec ?? '—' }}
                                         </td>
                                     </tr>
                                 </tbody>

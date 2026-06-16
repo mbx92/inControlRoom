@@ -138,6 +138,11 @@ class AlertRuleController extends Controller
                 'default_severity' => null,
                 'config' => [],
             ],
+            AlertRule::RULE_DOCKER_CONTAINER_STOPPED => [
+                'metric_key' => 'container.state',
+                'default_severity' => 'critical',
+                'config' => ['expected_state' => 'running'],
+            ],
         ][$validated['rule_key']];
 
         $thresholdRules = [

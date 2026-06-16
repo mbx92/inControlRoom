@@ -109,10 +109,10 @@ function submit() {
                         <button
                             type="submit"
                             class="btn btn-primary w-full"
-                            :class="{ loading: form.processing }"
                             :disabled="form.processing"
                         >
-                            Sign In
+                            <span v-if="form.processing" class="loading loading-spinner loading-xs"></span>
+                            <template v-else>Sign In</template>
                         </button>
                     </form>
 

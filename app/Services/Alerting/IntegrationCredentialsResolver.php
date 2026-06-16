@@ -13,9 +13,7 @@ class IntegrationCredentialsResolver
             : $integration->vaultEntry()->first();
 
         if ($vaultEntry) {
-            return [
-                'token' => $vaultEntry->revealSecret(),
-            ];
+            return $this->normalizeVaultSecret($vaultEntry->revealSecret());
         }
 
         $credentials = $integration->credentials;
@@ -29,5 +27,41 @@ class IntegrationCredentialsResolver
         }
 
         return [];
+    }
+
+    private function normalizeVaultSecret(string $secret): array
+    {
+        $trimmed = trim($secret);
+
+        if ($trimmed === '') {
+            return [];
+        }
+
+        $decoded = json_decode($trimmed, true);
+        if (! is_array($decoded)) {
+            return ['token' => $secret];
+        }
+
+        $credentials = [];
+
+        foreach (['token', 'secret', 'password', 'username', 'console_username', 'console_password'] as $key) {
+            if (! array_key_exists($key, $decoded) || ! is_scalar($decoded[$key])) {
+                continue;
+            }
+
+            $value = trim((string) $decoded[$key]);
+            if ($value === '') {
+                continue;
+            }
+
+            if ($key === 'secret') {
+                $credentials['token'] = $value;
+                continue;
+            }
+
+            $credentials[$key] = $value;
+        }
+
+        return $credentials === [] ? ['token' => $secret] : $credentials;
     }
 }

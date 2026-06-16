@@ -37,6 +37,7 @@ class AlertRule extends Model
     public const RULE_PROXMOX_GUEST_CPU_USAGE = 'proxmox_guest_cpu_usage_percent';
     public const RULE_PROXMOX_GUEST_MEMORY_USAGE = 'proxmox_guest_memory_usage_percent';
     public const RULE_PROXMOX_GUEST_DISK_USAGE = 'proxmox_guest_disk_usage_percent';
+    public const RULE_DOCKER_CONTAINER_STOPPED = 'docker_container_stopped';
 
     public const RULES = [
         self::RULE_INTEGRATION_HEALTH_FAILURE => 'Integration Health Failure',
@@ -44,6 +45,7 @@ class AlertRule extends Model
         self::RULE_PROXMOX_GUEST_CPU_USAGE => 'Proxmox Guest CPU Usage',
         self::RULE_PROXMOX_GUEST_MEMORY_USAGE => 'Proxmox Guest Memory Usage',
         self::RULE_PROXMOX_GUEST_DISK_USAGE => 'Proxmox Guest Disk Usage',
+        self::RULE_DOCKER_CONTAINER_STOPPED => 'Docker Container Stopped',
     ];
 
     public function site(): BelongsTo

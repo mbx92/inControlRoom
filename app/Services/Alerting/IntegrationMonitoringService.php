@@ -9,6 +9,8 @@ class IntegrationMonitoringService
     public function __construct(
         private readonly IntegrationHealthCheckService $healthCheckService,
         private readonly ProxmoxMetricSnapshotService $metricSnapshotService,
+        private readonly DockerMonitoringService $dockerMonitoringService,
+        private readonly NvrMonitoringService $nvrMonitoringService,
         private readonly AlertEvaluator $alertEvaluator,
     ) {
     }
@@ -34,6 +36,25 @@ class IntegrationMonitoringService
                 $guests = $this->metricSnapshotService->capture($integration);
                 $guestCount = count($guests);
                 $this->alertEvaluator->evaluateProxmoxGuests($integration, $guests);
+            } catch (\Throwable $e) {
+                $metricError = $e->getMessage();
+            }
+        }
+
+        if ($collectMetrics && $integration->type === 'docker' && $result['success']) {
+            try {
+                $containers = $this->dockerMonitoringService->capture($integration);
+                $guestCount = count($containers);
+                $this->alertEvaluator->evaluateDockerContainers($integration, $containers);
+            } catch (\Throwable $e) {
+                $metricError = $e->getMessage();
+            }
+        }
+
+        if ($collectMetrics && $integration->type === 'nvr' && $result['success']) {
+            try {
+                $channels = $this->nvrMonitoringService->capture($integration);
+                $guestCount = count($channels);
             } catch (\Throwable $e) {
                 $metricError = $e->getMessage();
             }

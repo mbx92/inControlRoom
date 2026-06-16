@@ -7,6 +7,7 @@ use App\Models\Integration;
 use App\Models\InventoryAsset;
 use App\Models\Site;
 use App\Models\VaultEntry;
+use App\Services\Alerting\DockerMonitoringService;
 use App\Services\Alerting\IntegrationMonitoringService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
@@ -218,6 +219,11 @@ class IntegrationController extends Controller
         $activitySource = 'local';
         $proxmoxGuests = null;
         $proxmoxSummary = null;
+        $dockerContainers = null;
+        $dockerSummary = null;
+        $nvrChannels = null;
+        $nvrSummary = null;
+        $nvrMeta = null;
         $activityError = null;
         $proxmoxJournal = null;
 
@@ -275,20 +281,79 @@ class IntegrationController extends Controller
             }
         }
 
+        if ($integration->type === 'docker') {
+            try {
+                $dockerMonitoring = app(DockerMonitoringService::class);
+                $dockerContainers = $dockerMonitoring->capture($integration, persistMetrics: false);
+                $dockerSummary = $dockerMonitoring->summarize($dockerContainers);
+            } catch (\Throwable $e) {
+                try {
+                    $dockerMonitoring ??= app(DockerMonitoringService::class);
+                    $dockerContainers = $dockerMonitoring->listBasic($integration);
+                    $dockerSummary = $dockerMonitoring->summarize($dockerContainers);
+                    $activityError = 'Container detail enrichment failed, showing basic container list only.';
+                } catch (\Throwable $fallbackException) {
+                    $activityError = $this->formatConnectionExceptionForDisplay(
+                        $fallbackException,
+                        $integration->base_url,
+                        $integration->config['verify_ssl'] ?? true,
+                    );
+                }
+            }
+        }
+
+        if ($integration->type === 'nvr') {
+            try {
+                $nvrMonitoring = app(\App\Services\Alerting\NvrMonitoringService::class);
+                $nvrCheck = $nvrMonitoring->check($integration);
+                $nvrMeta = is_array($nvrCheck['meta'] ?? null) ? $nvrCheck['meta'] : null;
+                $nvrChannels = $nvrMonitoring->capture($integration);
+                $nvrSummary = $nvrMonitoring->summarize($nvrChannels);
+            } catch (\Throwable $e) {
+                $activityError = $this->formatConnectionExceptionForDisplay(
+                    $e,
+                    $integration->base_url,
+                    $integration->config['verify_ssl'] ?? true,
+                );
+            }
+        }
+
+        $presentedIntegration = [
+            ...$this->presentIntegration($integration),
+            'created_at' => $integration->created_at?->toDateTimeString(),
+            'updated_at' => $integration->updated_at?->toDateTimeString(),
+            'metrics_count' => $integration->metrics()->count(),
+            'events_count' => $integration->events()->count(),
+        ];
+
+        if ($integration->type === 'nvr' && $nvrSummary !== null) {
+            $sourceSummary = $presentedIntegration['source_summary'] ?? [];
+            $presentedIntegration['source_summary'] = [
+                ...$sourceSummary,
+                'headline' => trim(collect([
+                    $nvrMeta['product'] ?? null,
+                    $nvrMeta['model'] ?? null,
+                    $nvrMeta['firmware'] ?? null,
+                ])->filter()->implode(' ')),
+                'firmware' => $nvrMeta['firmware'] ?? ($sourceSummary['firmware'] ?? null),
+                'channel_count' => $nvrSummary['channel_total'] ?? ($sourceSummary['channel_count'] ?? null),
+                'recording_count' => $nvrSummary['recording_total'] ?? ($sourceSummary['recording_count'] ?? null),
+                'verify_ssl' => $nvrMeta['verify_ssl'] ?? ($sourceSummary['verify_ssl'] ?? null),
+            ];
+        }
+
         return Inertia::render('Settings/Integrations/Show', [
-            'integration' => [
-                ...$this->presentIntegration($integration),
-                'created_at' => $integration->created_at?->toDateTimeString(),
-                'updated_at' => $integration->updated_at?->toDateTimeString(),
-                'metrics_count' => $integration->metrics()->count(),
-                'events_count' => $integration->events()->count(),
-            ],
+            'integration' => $presentedIntegration,
             'activity' => $activity,
             'activitySource' => $activitySource,
             'activityError' => $activityError,
             'proxmoxGuests' => $proxmoxGuests,
             'proxmoxSummary' => $proxmoxSummary,
             'proxmoxJournal' => $proxmoxJournal,
+            'dockerContainers' => $dockerContainers,
+            'dockerSummary' => $dockerSummary,
+            'nvrChannels' => $nvrChannels,
+            'nvrSummary' => $nvrSummary,
         ]);
     }
 
@@ -302,6 +367,7 @@ class IntegrationController extends Controller
             'vault_entry_id' => 'nullable|exists:vault_entries,id',
             'config' => 'nullable|array',
             'config.host_asset_id' => 'nullable|uuid|exists:inventory_assets,id',
+            'config.username' => 'nullable|string|max:255',
         ]);
 
         $validated = $this->normalizeIntegrationPayload($validated);
@@ -352,6 +418,7 @@ class IntegrationController extends Controller
             'vault_entry_id' => 'nullable|exists:vault_entries,id',
             'config' => 'nullable|array',
             'config.host_asset_id' => 'nullable|uuid|exists:inventory_assets,id',
+            'config.username' => 'nullable|string|max:255',
             'is_active' => 'boolean',
         ]);
 
@@ -657,8 +724,31 @@ class IntegrationController extends Controller
     {
         $meta = $integration->last_test_meta ?? [];
 
+        if ($integration->type === 'nvr' && ! empty($meta)) {
+            return [
+                'headline' => trim(collect([$meta['product'] ?? null, $meta['model'] ?? null, $meta['firmware'] ?? null])->filter()->implode(' ')),
+                'firmware' => $meta['firmware'] ?? null,
+                'channel_count' => $meta['channel_count'] ?? null,
+                'recording_count' => $meta['recording_count'] ?? null,
+                'verify_ssl' => $meta['verify_ssl'] ?? null,
+            ];
+        }
+
         if ($integration->type !== 'proxmox' || empty($meta)) {
-            return null;
+            if ($integration->type !== 'docker' || empty($meta)) {
+                return null;
+            }
+
+            return [
+                'headline' => trim(collect([$meta['product'] ?? null, $meta['version'] ?? null])->filter()->implode(' ')),
+                'api_version' => $meta['api_version'] ?? null,
+                'container_count' => $meta['container_count'] ?? null,
+                'running_count' => $meta['running_count'] ?? null,
+                'stopped_count' => $meta['stopped_count'] ?? null,
+                'os' => $meta['os'] ?? null,
+                'kernel_version' => $meta['kernel_version'] ?? null,
+                'verify_ssl' => $meta['verify_ssl'] ?? null,
+            ];
         }
 
         return [
@@ -691,7 +781,9 @@ class IntegrationController extends Controller
             },
             'endpoint' => $meta['health_endpoint'] ?? ($integration->type === 'proxmox'
                 ? rtrim($integration->base_url, '/').'/api2/json/version'
-                : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health')),
+                : ($integration->type === 'docker'
+                    ? rtrim($integration->base_url, '/').'/_ping'
+                    : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health'))),
             'reachable' => $meta['api_reachable'] ?? ($status === 'success'),
             'auth_status' => $meta['auth_status'] ?? ($status === 'success' ? 'valid' : 'unknown'),
             'latency_ms' => $meta['latency_ms'] ?? null,
@@ -699,8 +791,8 @@ class IntegrationController extends Controller
             'http_status' => $meta['http_status'] ?? null,
             'checked_at' => $integration->last_tested_at?->toDateTimeString(),
             'verify_ssl' => $meta['verify_ssl'] ?? ($integration->config['verify_ssl'] ?? true),
-            'method' => $meta['health_method'] ?? ($integration->config['health_method'] ?? 'GET'),
-            'expected_status' => $meta['expected_status'] ?? ($integration->config['health_expected_status'] ?? 200),
+            'method' => $meta['health_method'] ?? ($integration->type === 'docker' ? 'GET' : ($integration->config['health_method'] ?? 'GET')),
+            'expected_status' => $meta['expected_status'] ?? ($integration->type === 'docker' ? 200 : ($integration->config['health_expected_status'] ?? 200)),
         ];
     }
 
@@ -714,7 +806,9 @@ class IntegrationController extends Controller
             'verify_ssl' => $verifySsl,
             'health_endpoint' => $integration->type === 'proxmox'
                 ? rtrim($integration->base_url, '/').'/api2/json/version'
-                : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health'),
+                : ($integration->type === 'docker'
+                    ? rtrim($integration->base_url, '/').'/_ping'
+                    : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health')),
             'api_reachable' => false,
             'auth_status' => str_contains($messageLower, 'auth')
                 || str_contains($messageLower, 'token')
@@ -723,8 +817,8 @@ class IntegrationController extends Controller
                 ? 'failed'
                 : 'unknown',
             'latency_ms' => null,
-            'health_method' => $integration->config['health_method'] ?? 'GET',
-            'expected_status' => $integration->config['health_expected_status'] ?? 200,
+            'health_method' => $integration->type === 'docker' ? 'GET' : ($integration->config['health_method'] ?? 'GET'),
+            'expected_status' => $integration->type === 'docker' ? 200 : ($integration->config['health_expected_status'] ?? 200),
         ];
     }
 
@@ -791,6 +885,7 @@ class IntegrationController extends Controller
             'health_method' => strtoupper((string) ($config['health_method'] ?? 'GET')),
             'health_expected_status' => (int) ($config['health_expected_status'] ?? 200),
             'host_asset_id' => ! empty($config['host_asset_id']) ? (string) $config['host_asset_id'] : null,
+            'username' => trim((string) ($config['username'] ?? '')),
         ];
 
         return $validated;
@@ -851,7 +946,25 @@ class IntegrationController extends Controller
             ]);
         }
 
+        if ($type === 'nvr' && ! $vaultEntryId) {
+            throw ValidationException::withMessages([
+                'vault_entry_id' => 'Hikvision NVR integration requires a vault entry (username + password).',
+            ]);
+        }
+
+        if ($type === 'nvr' && trim((string) ($validated['config']['username'] ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'config.username' => 'Hikvision NVR integration requires a username.',
+            ]);
+        }
+
         if ($type === 'custom_api' && $authMode === 'bearer' && ! $vaultEntryId) {
+            throw ValidationException::withMessages([
+                'vault_entry_id' => 'Bearer authentication requires a vault entry.',
+            ]);
+        }
+
+        if ($type === 'docker' && $authMode === 'bearer' && ! $vaultEntryId) {
             throw ValidationException::withMessages([
                 'vault_entry_id' => 'Bearer authentication requires a vault entry.',
             ]);
@@ -875,9 +988,9 @@ class IntegrationController extends Controller
             return;
         }
 
-        if ($type !== 'proxmox') {
+        if ($type !== 'proxmox' && $type !== 'nvr') {
             throw ValidationException::withMessages([
-                'config.host_asset_id' => 'Host machine can only be linked for Proxmox integrations.',
+                'config.host_asset_id' => 'Host machine can only be linked for Proxmox and Hikvision NVR integrations.',
             ]);
         }
 

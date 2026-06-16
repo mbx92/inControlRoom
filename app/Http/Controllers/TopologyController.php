@@ -6,6 +6,8 @@ use App\Models\Integration;
 use App\Models\InventoryAsset;
 use App\Models\Site;
 use App\Models\TopologyLayout;
+use App\Services\Alerting\DockerMonitoringService;
+use App\Services\Alerting\NvrMonitoringService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -36,13 +38,15 @@ class TopologyController extends Controller
             abort(403, 'You do not have access to this site.');
         }
         $mode = $request->query('mode', 'infrastructure');
-        if (! in_array($mode, ['infrastructure', 'network', 'proxmox'], true)) {
+        if (! in_array($mode, ['infrastructure', 'network', 'proxmox', 'docker', 'nvr'], true)) {
             $mode = 'infrastructure';
         }
 
         $topologyGraph = match ($mode) {
             'network' => $this->buildNetworkTopologyGraph($selectedSite),
             'proxmox' => $this->buildProxmoxTopologyGraph($selectedSite),
+            'docker' => $this->buildDockerTopologyGraph($selectedSite),
+            'nvr' => $this->buildNvrTopologyGraph($selectedSite),
             default => $this->buildInfrastructureTopologyGraph($selectedSite),
         };
 
@@ -59,7 +63,7 @@ class TopologyController extends Controller
     {
         $validated = $request->validate([
             'site_id' => ['required', 'uuid', 'exists:sites,id'],
-            'mode' => ['required', 'in:infrastructure,network,proxmox'],
+            'mode' => ['required', 'in:infrastructure,network,proxmox,docker,nvr'],
             'positions' => ['required', 'array'],
             'positions.*.x' => ['required', 'numeric'],
             'positions.*.y' => ['required', 'numeric'],
@@ -88,7 +92,7 @@ class TopologyController extends Controller
     {
         $validated = $request->validate([
             'site_id' => ['required', 'uuid', 'exists:sites,id'],
-            'mode' => ['required', 'in:infrastructure,network,proxmox'],
+            'mode' => ['required', 'in:infrastructure,network,proxmox,docker,nvr'],
         ]);
 
         TopologyLayout::query()
@@ -340,6 +344,7 @@ class TopologyController extends Controller
                     'subtitle' => $guest['type'] === 'qemu' ? 'VM' : 'CT',
                     'icon' => $guest['type'] === 'qemu' ? 'vm' : 'container',
                     'status' => $guest['status'] ?? 'unknown',
+                    'integrationNodeId' => $intNodeId,
                     'vmid' => $guest['vmid'],
                     'node' => $guest['node'],
                     'cpu' => $guest['cpu_usage_percent'] ?? null,
@@ -573,6 +578,268 @@ class TopologyController extends Controller
         ];
     }
 
+    private function buildDockerTopologyGraph(?string $siteId): array
+    {
+        $nodes = [];
+        $edges = [];
+
+        if (! $siteId) {
+            return ['nodes' => [], 'edges' => [], 'meta' => ['mode' => 'docker', 'hasIntegration' => false, 'containerCount' => 0]];
+        }
+
+        $site = Site::find($siteId);
+        if (! $site) {
+            return ['nodes' => [], 'edges' => [], 'meta' => ['mode' => 'docker', 'hasIntegration' => false, 'containerCount' => 0]];
+        }
+
+        $siteColor = $this->siteColor($site);
+        $siteNodeId = 'site:'.$site->id;
+
+        $dockerIntegrations = Integration::query()
+            ->where('type', 'docker')
+            ->where('is_active', true)
+            ->where('site_id', $siteId)
+            ->with('site', 'vaultEntry')
+            ->orderBy('name')
+            ->get();
+
+        $allAssets = InventoryAsset::query()
+            ->where('site_id', $siteId)
+            ->orderBy('name')
+            ->get();
+
+        $containerCount = 0;
+
+        $nodes[] = [
+            'id' => $siteNodeId,
+            'type' => 'site-group',
+            'position' => ['x' => 0, 'y' => 0],
+            'data' => [
+                'label' => $site->name,
+                'subtitle' => $dockerIntegrations->isNotEmpty()
+                    ? $dockerIntegrations->count().' docker host'.($dockerIntegrations->count() !== 1 ? 's' : '')
+                    : 'No active Docker integration',
+                'icon' => 'site',
+                'siteColor' => $siteColor,
+                'layer' => 'virtual',
+                'assetCount' => 0,
+            ],
+        ];
+
+        if ($dockerIntegrations->isEmpty()) {
+            return [
+                'nodes' => $nodes,
+                'edges' => $edges,
+                'meta' => [
+                    'mode' => 'docker',
+                    'hasIntegration' => false,
+                    'integrationCount' => 0,
+                    'containerCount' => 0,
+                ],
+            ];
+        }
+
+        $dockerMonitoring = app(DockerMonitoringService::class);
+
+        foreach ($dockerIntegrations as $integration) {
+            $hostAsset = $this->resolveHostAsset($integration, $allAssets);
+            $containers = $this->fetchDockerContainersForTopology($integration, $dockerMonitoring);
+            $containerCount += count($containers);
+            $intNodeId = 'integration:'.$integration->id;
+
+            $nodes[] = [
+                'id' => $intNodeId,
+                'type' => 'docker-integration',
+                'position' => ['x' => 0, 'y' => 0],
+                'data' => [
+                    'label' => $integration->name,
+                    'subtitle' => 'Docker Engine',
+                    'icon' => 'container',
+                    'siteColor' => $siteColor,
+                    'layer' => 'virtual',
+                    'hostAssetName' => $hostAsset?->name,
+                ],
+            ];
+
+            $edges[] = $this->topologyEdge(
+                id: "e-docker-site-{$integration->id}",
+                source: $siteNodeId,
+                target: $intNodeId,
+                variant: 'virtual',
+            );
+
+            foreach ($containers as $container) {
+                $cid = 'container:'.$integration->id.':'.($container['id'] ?? md5(json_encode($container)));
+
+                $nodes[] = [
+                    'id' => $cid,
+                    'type' => 'docker-container',
+                    'position' => ['x' => 0, 'y' => 0],
+                    'data' => [
+                        'label' => $container['name'],
+                        'subtitle' => $container['state'] === 'running' ? 'running' : ($container['state'] ?? 'unknown'),
+                        'icon' => 'container',
+                        'status' => $container['state'] ?? 'unknown',
+                        'integrationNodeId' => $intNodeId,
+                        'image' => $container['image'] ?? null,
+                        'container_id' => $container['id'] ?? null,
+                        'layer' => 'virtual',
+                    ],
+                ];
+
+                $edges[] = $this->topologyEdge(
+                    id: "e-docker-{$cid}",
+                    source: $intNodeId,
+                    target: $cid,
+                    variant: 'virtual',
+                );
+            }
+        }
+
+        return [
+            'nodes' => $nodes,
+            'edges' => $edges,
+            'meta' => [
+                'mode' => 'docker',
+                'hasIntegration' => true,
+                'integrationCount' => $dockerIntegrations->count(),
+                'containerCount' => $containerCount,
+            ],
+        ];
+    }
+
+    private function buildNvrTopologyGraph(?string $siteId): array
+    {
+        $nodes = [];
+        $edges = [];
+
+        if (! $siteId) {
+            return ['nodes' => [], 'edges' => [], 'meta' => ['mode' => 'nvr', 'hasIntegration' => false, 'cameraCount' => 0]];
+        }
+
+        $site = Site::find($siteId);
+        if (! $site) {
+            return ['nodes' => [], 'edges' => [], 'meta' => ['mode' => 'nvr', 'hasIntegration' => false, 'cameraCount' => 0]];
+        }
+
+        $siteColor = $this->siteColor($site);
+        $siteNodeId = 'site:'.$site->id;
+
+        $nvrIntegrations = Integration::query()
+            ->where('type', 'nvr')
+            ->where('is_active', true)
+            ->where('site_id', $siteId)
+            ->with('site', 'vaultEntry')
+            ->orderBy('name')
+            ->get();
+
+        $allAssets = InventoryAsset::query()
+            ->where('site_id', $siteId)
+            ->orderBy('name')
+            ->get();
+
+        $cameraCount = 0;
+
+        $nodes[] = [
+            'id' => $siteNodeId,
+            'type' => 'site-group',
+            'position' => ['x' => 0, 'y' => 0],
+            'data' => [
+                'label' => $site->name,
+                'subtitle' => $nvrIntegrations->isNotEmpty()
+                    ? $nvrIntegrations->count().' nvr'.($nvrIntegrations->count() !== 1 ? 's' : '')
+                    : 'No active NVR integration',
+                'icon' => 'site',
+                'siteColor' => $siteColor,
+                'layer' => 'virtual',
+                'assetCount' => 0,
+            ],
+        ];
+
+        if ($nvrIntegrations->isEmpty()) {
+            return [
+                'nodes' => $nodes,
+                'edges' => $edges,
+                'meta' => [
+                    'mode' => 'nvr',
+                    'hasIntegration' => false,
+                    'integrationCount' => 0,
+                    'cameraCount' => 0,
+                ],
+            ];
+        }
+
+        $nvrMonitoring = app(NvrMonitoringService::class);
+
+        foreach ($nvrIntegrations as $integration) {
+            $hostAsset = $this->resolveHostAsset($integration, $allAssets);
+            $cameras = $this->fetchNvrCamerasForTopology($integration, $nvrMonitoring);
+            $cameraCount += count($cameras);
+            $intNodeId = 'integration:'.$integration->id;
+
+            $nodes[] = [
+                'id' => $intNodeId,
+                'type' => 'nvr-integration',
+                'position' => ['x' => 0, 'y' => 0],
+                'data' => [
+                    'label' => $integration->name,
+                    'subtitle' => 'Hikvision NVR',
+                    'icon' => 'nvr',
+                    'siteColor' => $siteColor,
+                    'layer' => 'virtual',
+                    'hostAssetName' => $hostAsset?->name,
+                ],
+            ];
+
+            $edges[] = $this->topologyEdge(
+                id: "e-nvr-site-{$integration->id}",
+                source: $siteNodeId,
+                target: $intNodeId,
+                variant: 'virtual',
+            );
+
+            foreach ($cameras as $camera) {
+                $cameraId = 'camera:'.$integration->id.':'.($camera['id'] ?? md5(json_encode($camera)));
+
+                $nodes[] = [
+                    'id' => $cameraId,
+                    'type' => 'cctv-camera',
+                    'position' => ['x' => 0, 'y' => 0],
+                    'data' => [
+                        'label' => $camera['camera_label'] ?? $camera['name'] ?? 'Camera',
+                        'subtitle' => $camera['video_resolution'] ?? 'stream',
+                        'icon' => 'cctv',
+                        'status' => $camera['enabled'] ? 'online' : 'offline',
+                        'integrationNodeId' => $intNodeId,
+                        'channel_id' => $camera['id'] ?? null,
+                        'camera_number' => $camera['camera_number'] ?? null,
+                        'video_codec' => $camera['video_codec'] ?? null,
+                        'is_recording' => $camera['is_recording'] ?? false,
+                        'layer' => 'virtual',
+                    ],
+                ];
+
+                $edges[] = $this->topologyEdge(
+                    id: "e-nvr-{$cameraId}",
+                    source: $intNodeId,
+                    target: $cameraId,
+                    variant: 'virtual',
+                );
+            }
+        }
+
+        return [
+            'nodes' => $nodes,
+            'edges' => $edges,
+            'meta' => [
+                'mode' => 'nvr',
+                'hasIntegration' => true,
+                'integrationCount' => $nvrIntegrations->count(),
+                'cameraCount' => $cameraCount,
+            ],
+        ];
+    }
+
     private function siteFloorSummary(Collection $assets): array
     {
         return $assets
@@ -687,6 +954,28 @@ class TopologyController extends Controller
                 $credentials,
                 $verifySsl,
             );
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    private function fetchDockerContainersForTopology(
+        Integration $integration,
+        DockerMonitoringService $dockerMonitoring,
+    ): array {
+        try {
+            return $dockerMonitoring->listBasic($integration);
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    private function fetchNvrCamerasForTopology(
+        Integration $integration,
+        NvrMonitoringService $nvrMonitoring,
+    ): array {
+        try {
+            return $nvrMonitoring->topologyCameras($integration);
         } catch (\Throwable $e) {
             return [];
         }

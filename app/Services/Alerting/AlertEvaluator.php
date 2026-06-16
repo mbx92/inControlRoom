@@ -139,6 +139,57 @@ class AlertEvaluator
         }
     }
 
+    public function evaluateDockerContainers(Integration $integration, array $containers): void
+    {
+        $seenFingerprints = [];
+        $rule = $this->resolveRule($integration->site_id, AlertRule::RULE_DOCKER_CONTAINER_STOPPED);
+
+        foreach ($containers as $container) {
+            $containerLabel = trim(($container['name'] ?? 'Container').' '.substr((string) ($container['id'] ?? 'unknown'), 0, 12));
+            $containerId = (string) ($container['id'] ?? 'unknown');
+            $fingerprint = "integration:{$integration->id}:container:{$containerId}:stopped";
+
+            if (! $rule['is_active']) {
+                $this->resolveIfActive($fingerprint, ['reason' => 'rule_disabled']);
+
+                continue;
+            }
+
+            $seenFingerprints[] = $fingerprint;
+
+            if (($container['state'] ?? 'unknown') !== 'running') {
+                $this->activateAlert(
+                    integration: $integration,
+                    ruleKey: AlertRule::RULE_DOCKER_CONTAINER_STOPPED,
+                    fingerprint: $fingerprint,
+                    severity: $rule['default_severity'] ?? Event::SEVERITY_CRITICAL,
+                    title: "Docker container stopped: {$containerLabel}",
+                    message: "{$containerLabel} is currently {$container['state']}.",
+                    context: ['container' => $container],
+                );
+            } else {
+                $this->resolveIfActive($fingerprint, ['container' => $container]);
+            }
+        }
+
+        $activeContainerAlerts = Event::query()
+            ->where('integration_id', $integration->id)
+            ->where('rule_key', AlertRule::RULE_DOCKER_CONTAINER_STOPPED)
+            ->whereNotNull('active_fingerprint')
+            ->get();
+
+        foreach ($activeContainerAlerts as $event) {
+            if (! in_array($event->active_fingerprint, $seenFingerprints, true)) {
+                $event->resolve([
+                    'reason' => 'container_missing_or_recovered',
+                    'previous_context' => $event->context,
+                ]);
+
+                $this->notifier->notify($event->fresh(['integration', 'site']), 'resolved');
+            }
+        }
+    }
+
     private function evaluateMetricRule(
         Integration $integration,
         array $guest,
@@ -326,7 +377,8 @@ class AlertEvaluator
 
         return match ($ruleKey) {
             AlertRule::RULE_INTEGRATION_HEALTH_FAILURE,
-            AlertRule::RULE_PROXMOX_GUEST_STOPPED => [
+            AlertRule::RULE_PROXMOX_GUEST_STOPPED,
+            AlertRule::RULE_DOCKER_CONTAINER_STOPPED => [
                 'is_active' => true,
                 'default_severity' => Event::SEVERITY_CRITICAL,
                 'warning_threshold' => null,
