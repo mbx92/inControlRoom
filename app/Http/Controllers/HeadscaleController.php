@@ -11,6 +11,7 @@ use App\Services\Alerting\IntegrationCredentialsResolver;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Client\Response as HttpResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
@@ -64,12 +65,36 @@ class HeadscaleController extends Controller
 
         $users = [];
         $nodes = [];
+        $preAuthKeys = [];
+        $apiKeys = [];
+        $policy = null;
+        $health = null;
         $apiError = null;
+        $featureErrors = [];
 
         try {
             $credentials = $this->credentialsResolver->resolve($integration);
             $users = $this->fetchUsers($integration, $credentials);
             $nodes = $this->fetchNodes($integration, $credentials);
+            [$preAuthKeysResult, $featureErrors['pre_auth_keys']] = $this->attemptHeadscaleSection(
+                fn () => $this->fetchPreAuthKeys($integration, $credentials)
+            );
+            $preAuthKeys = is_array($preAuthKeysResult) ? $preAuthKeysResult : [];
+
+            [$apiKeysResult, $featureErrors['api_keys']] = $this->attemptHeadscaleSection(
+                fn () => $this->fetchApiKeys($integration, $credentials)
+            );
+            $apiKeys = is_array($apiKeysResult) ? $apiKeysResult : [];
+
+            [$policyResult, $featureErrors['policy']] = $this->attemptHeadscaleSection(
+                fn () => $this->fetchPolicy($integration, $credentials)
+            );
+            $policy = is_array($policyResult) ? $policyResult : null;
+
+            [$healthResult, $featureErrors['health']] = $this->attemptHeadscaleSection(
+                fn () => $this->fetchHealth($integration, $credentials)
+            );
+            $health = is_array($healthResult) ? $healthResult : null;
         } catch (\Throwable $e) {
             $apiError = $this->formatConnectionExceptionForDisplay(
                 $e,
@@ -82,13 +107,315 @@ class HeadscaleController extends Controller
             'integration' => $this->presentIntegration($integration),
             'users' => $users,
             'nodes' => $nodes,
+            'preAuthKeys' => $preAuthKeys,
+            'apiKeys' => $apiKeys,
+            'policy' => $policy,
+            'health' => $health,
             'stats' => [
                 'user_total' => count($users),
                 'node_total' => count($nodes),
                 'online_total' => collect($nodes)->where('is_online', true)->count(),
                 'tagged_total' => collect($nodes)->filter(fn (array $node) => count($node['tags']) > 0)->count(),
+                'subnet_router_total' => collect($nodes)->filter(fn (array $node) => count($node['available_routes']) > 0)->count(),
+                'pre_auth_key_total' => count($preAuthKeys),
+                'api_key_total' => count($apiKeys),
             ],
             'apiError' => $apiError,
+            'featureErrors' => array_filter($featureErrors),
+        ]);
+    }
+
+    public function updateNodeTags(Request $request, Integration $integration, string $nodeId): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->canExecute(), 403);
+
+        $validated = $request->validate([
+            'tags' => ['nullable', 'array'],
+            'tags.*' => ['string', 'max:255'],
+        ]);
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->post($this->headscaleApiBase($integration->base_url)."/node/{$nodeId}/tags", [
+                'tags' => array_values(array_filter($validated['tags'] ?? [])),
+            ]);
+
+        $this->ensureHeadscaleSuccess($response, 'updating node tags');
+
+        return response()->json([
+            'message' => 'Node tags updated.',
+            'node' => $this->mapNode((array) $response->json('node', [])),
+        ]);
+    }
+
+    public function updateNodeRoutes(Request $request, Integration $integration, string $nodeId): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->canExecute(), 403);
+
+        $validated = $request->validate([
+            'routes' => ['nullable', 'array'],
+            'routes.*' => ['string', 'max:255'],
+        ]);
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->post($this->headscaleApiBase($integration->base_url)."/node/{$nodeId}/approve_routes", [
+                'routes' => array_values(array_filter($validated['routes'] ?? [])),
+            ]);
+
+        $this->ensureHeadscaleSuccess($response, 'approving node routes');
+
+        return response()->json([
+            'message' => 'Approved routes updated.',
+            'node' => $this->mapNode((array) $response->json('node', [])),
+        ]);
+    }
+
+    public function renameNode(Request $request, Integration $integration, string $nodeId): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->canExecute(), 403);
+
+        $validated = $request->validate([
+            'new_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $encodedName = rawurlencode($validated['new_name']);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->post($this->headscaleApiBase($integration->base_url)."/node/{$nodeId}/rename/{$encodedName}");
+
+        $this->ensureHeadscaleSuccess($response, 'renaming node');
+
+        return response()->json([
+            'message' => 'Node renamed.',
+            'node' => $this->mapNode((array) $response->json('node', [])),
+        ]);
+    }
+
+    public function expireNode(Request $request, Integration $integration, string $nodeId): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->canExecute(), 403);
+
+        $validated = $request->validate([
+            'disable_expiry' => ['nullable', 'boolean'],
+        ]);
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->post($this->headscaleApiBase($integration->base_url)."/node/{$nodeId}/expire", [
+                'disable_expiry' => (bool) ($validated['disable_expiry'] ?? false),
+            ]);
+
+        $this->ensureHeadscaleSuccess($response, 'expiring node');
+
+        return response()->json([
+            'message' => ($validated['disable_expiry'] ?? false) ? 'Node expiry disabled.' : 'Node expired.',
+            'node' => $this->mapNode((array) $response->json('node', [])),
+        ]);
+    }
+
+    public function createPreAuthKey(Request $request, Integration $integration): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->canExecute(), 403);
+
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer', 'min:1'],
+            'reusable' => ['nullable', 'boolean'],
+            'ephemeral' => ['nullable', 'boolean'],
+            'expiration' => ['nullable', 'date'],
+            'acl_tags' => ['nullable', 'array'],
+            'acl_tags.*' => ['string', 'max:255'],
+        ]);
+
+        $payload = [
+            'user' => (int) $validated['user_id'],
+            'reusable' => (bool) ($validated['reusable'] ?? false),
+            'ephemeral' => (bool) ($validated['ephemeral'] ?? false),
+            'aclTags' => array_values(array_filter($validated['acl_tags'] ?? [])),
+        ];
+
+        if (! empty($validated['expiration'])) {
+            $payload['expiration'] = $validated['expiration'];
+        }
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->post($this->headscaleApiBase($integration->base_url).'/preauthkey', $payload);
+
+        $this->ensureHeadscaleSuccess($response, 'creating pre-auth key');
+
+        return response()->json([
+            'message' => 'Pre-auth key created.',
+            'pre_auth_key' => $this->mapPreAuthKey((array) $response->json('preAuthKey', $response->json('pre_auth_key', []))),
+        ]);
+    }
+
+    public function createApiKey(Request $request, Integration $integration): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->isAdmin(), 403);
+
+        $validated = $request->validate([
+            'expiration' => ['nullable', 'date'],
+        ]);
+
+        $payload = [];
+        if (! empty($validated['expiration'])) {
+            $payload['expiration'] = $validated['expiration'];
+        }
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->post($this->headscaleApiBase($integration->base_url).'/apikey', $payload);
+
+        $this->ensureHeadscaleSuccess($response, 'creating API key');
+
+        return response()->json([
+            'message' => 'API key created. Save it now, Headscale will not show it again.',
+            'api_key' => (string) ($response->json('apiKey') ?? $response->json('api_key') ?? ''),
+        ]);
+    }
+
+    public function deleteApiKey(Request $request, Integration $integration, string $prefix): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->isAdmin(), 403);
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->delete($this->headscaleApiBase($integration->base_url).'/apikey/'.rawurlencode($prefix));
+
+        $this->ensureHeadscaleSuccess($response, 'deleting API key');
+
+        return response()->json([
+            'message' => 'API key deleted.',
+        ]);
+    }
+
+    public function createUser(Request $request, Integration $integration): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->isAdmin(), 403);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->post($this->headscaleApiBase($integration->base_url).'/user', [
+                'name' => $validated['name'],
+            ]);
+
+        $this->ensureHeadscaleSuccess($response, 'creating user');
+
+        return response()->json([
+            'message' => 'User created.',
+            'user' => $this->mapUser((array) $response->json('user', [])),
+        ]);
+    }
+
+    public function renameUser(Request $request, Integration $integration, string $userId): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->isAdmin(), 403);
+
+        $validated = $request->validate([
+            'new_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->post($this->headscaleApiBase($integration->base_url).'/user/'.$userId.'/rename/'.rawurlencode($validated['new_name']));
+
+        $this->ensureHeadscaleSuccess($response, 'renaming user');
+
+        return response()->json([
+            'message' => 'User renamed.',
+            'user' => $this->mapUser((array) $response->json('user', [])),
+        ]);
+    }
+
+    public function deleteUser(Request $request, Integration $integration, string $userId): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->isAdmin(), 403);
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->delete($this->headscaleApiBase($integration->base_url).'/user/'.$userId);
+
+        $this->ensureHeadscaleSuccess($response, 'deleting user');
+
+        return response()->json([
+            'message' => 'User deleted.',
+        ]);
+    }
+
+    public function expirePreAuthKey(Request $request, Integration $integration, string $keyId): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->canExecute(), 403);
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->post($this->headscaleApiBase($integration->base_url).'/preauthkey/expire', [
+                'id' => (int) $keyId,
+            ]);
+
+        $this->ensureHeadscaleSuccess($response, 'expiring pre-auth key');
+
+        return response()->json([
+            'message' => 'Pre-auth key expired.',
+        ]);
+    }
+
+    public function updatePolicy(Request $request, Integration $integration): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->isAdmin(), 403);
+
+        $validated = $request->validate([
+            'policy' => ['required', 'string'],
+        ]);
+
+        $credentials = $this->credentialsResolver->resolve($integration);
+        $base = $this->headscaleApiBase($integration->base_url);
+
+        $checkResponse = $this->headscaleHttpClient($integration, $credentials)
+            ->post("{$base}/policy/check", [
+                'policy' => $validated['policy'],
+            ]);
+
+        $this->ensureHeadscaleSuccess($checkResponse, 'checking policy');
+
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->put("{$base}/policy", [
+                'policy' => $validated['policy'],
+            ]);
+
+        $this->ensureHeadscaleSuccess($response, 'updating policy');
+
+        return response()->json([
+            'message' => 'Policy updated.',
+            'policy' => $this->mapPolicy((array) $response->json()),
         ]);
     }
 
@@ -237,20 +564,11 @@ class HeadscaleController extends Controller
         $response = $this->headscaleHttpClient($integration, $credentials)
             ->get($this->headscaleApiBase($integration->base_url).'/user');
 
-        if (! $response->successful()) {
-            throw new \RuntimeException("Headscale returned HTTP {$response->status()} while fetching users.");
-        }
+        $this->ensureHeadscaleSuccess($response, 'fetching users');
 
         return collect($response->json('users', $response->json('user', $response->json() ?? [])))
             ->filter(fn ($item) => is_array($item))
-            ->map(fn (array $user) => [
-                'id' => (string) ($user['id'] ?? $user['name'] ?? uniqid('hs-user-', true)),
-                'name' => (string) ($user['name'] ?? $user['displayName'] ?? $user['email'] ?? 'unknown'),
-                'display_name' => $user['displayName'] ?? $user['name'] ?? null,
-                'email' => $user['email'] ?? null,
-                'provider' => $user['provider'] ?? $user['providerIdentifier'] ?? null,
-                'created_at' => $user['createdAt'] ?? null,
-            ])
+            ->map(fn (array $user) => $this->mapUser($user))
             ->values()
             ->all();
     }
@@ -260,36 +578,191 @@ class HeadscaleController extends Controller
         $response = $this->headscaleHttpClient($integration, $credentials)
             ->get($this->headscaleApiBase($integration->base_url).'/node');
 
-        if (! $response->successful()) {
-            throw new \RuntimeException("Headscale returned HTTP {$response->status()} while fetching nodes.");
-        }
+        $this->ensureHeadscaleSuccess($response, 'fetching nodes');
 
         return collect($response->json('nodes', $response->json('node', $response->json() ?? [])))
             ->filter(fn ($item) => is_array($item))
-            ->map(function (array $node) {
-                $user = $node['user'] ?? [];
-                $tags = collect([
-                    ...((array) ($node['forcedTags'] ?? [])),
-                    ...((array) ($node['invalidTags'] ?? [])),
-                    ...((array) ($node['validTags'] ?? [])),
-                    ...((array) ($node['approvedTags'] ?? [])),
-                ])->filter()->unique()->values()->all();
-
-                return [
-                    'id' => (string) ($node['id'] ?? uniqid('hs-node-', true)),
-                    'name' => (string) ($node['name'] ?? $node['givenName'] ?? 'unknown'),
-                    'given_name' => $node['givenName'] ?? null,
-                    'user_name' => is_array($user) ? ($user['name'] ?? $user['displayName'] ?? 'unknown') : (string) $user,
-                    'is_online' => (bool) ($node['online'] ?? false),
-                    'ips' => array_values(array_filter((array) ($node['ipAddresses'] ?? []))),
-                    'tags' => $tags,
-                    'last_seen' => $node['lastSeen'] ?? null,
-                    'expiry' => $node['expiry'] ?? null,
-                    'created_at' => $node['createdAt'] ?? null,
-                ];
-            })
+            ->map(fn (array $node) => $this->mapNode($node))
             ->values()
             ->all();
+    }
+
+    private function fetchPreAuthKeys(Integration $integration, array $credentials): array
+    {
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->get($this->headscaleApiBase($integration->base_url).'/preauthkey');
+
+        $this->ensureHeadscaleSuccess($response, 'fetching pre-auth keys');
+
+        return collect($response->json('preAuthKeys', $response->json('pre_auth_keys', [])))
+            ->filter(fn ($item) => is_array($item))
+            ->map(fn (array $key) => $this->mapPreAuthKey($key))
+            ->values()
+            ->all();
+    }
+
+    private function fetchApiKeys(Integration $integration, array $credentials): array
+    {
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->get($this->headscaleApiBase($integration->base_url).'/apikey');
+
+        $this->ensureHeadscaleSuccess($response, 'fetching API keys');
+
+        return collect($response->json('apiKeys', $response->json('api_keys', [])))
+            ->filter(fn ($item) => is_array($item))
+            ->map(fn (array $key) => [
+                'id' => (string) ($key['id'] ?? uniqid('hs-api-key-', true)),
+                'prefix' => (string) ($key['prefix'] ?? ''),
+                'expiration' => $key['expiration'] ?? null,
+                'created_at' => $key['createdAt'] ?? $key['created_at'] ?? null,
+                'last_seen' => $key['lastSeen'] ?? $key['last_seen'] ?? null,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function fetchPolicy(Integration $integration, array $credentials): ?array
+    {
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->get($this->headscaleApiBase($integration->base_url).'/policy');
+
+        $this->ensureHeadscaleSuccess($response, 'fetching policy');
+
+        return $this->mapPolicy((array) $response->json());
+    }
+
+    private function fetchHealth(Integration $integration, array $credentials): ?array
+    {
+        $response = $this->headscaleHttpClient($integration, $credentials)
+            ->get($this->headscaleApiBase($integration->base_url).'/health');
+
+        $this->ensureHeadscaleSuccess($response, 'fetching health status');
+
+        return [
+            'database_connectivity' => (bool) ($response->json('databaseConnectivity') ?? $response->json('database_connectivity') ?? false),
+        ];
+    }
+
+    private function mapUser(array $user): array
+    {
+        return [
+            'id' => (string) ($user['id'] ?? $user['name'] ?? uniqid('hs-user-', true)),
+            'name' => (string) ($user['name'] ?? $user['displayName'] ?? $user['email'] ?? 'unknown'),
+            'display_name' => $user['displayName'] ?? $user['display_name'] ?? $user['name'] ?? null,
+            'email' => $user['email'] ?? null,
+            'provider' => $user['provider'] ?? $user['providerIdentifier'] ?? $user['provider_identifier'] ?? null,
+            'created_at' => $user['createdAt'] ?? $user['created_at'] ?? null,
+        ];
+    }
+
+    private function mapNode(array $node): array
+    {
+        $user = $node['user'] ?? [];
+        $tags = collect([
+            ...((array) ($node['tags'] ?? [])),
+            ...((array) ($node['forcedTags'] ?? [])),
+            ...((array) ($node['invalidTags'] ?? [])),
+            ...((array) ($node['validTags'] ?? [])),
+            ...((array) ($node['approvedTags'] ?? [])),
+        ])->filter()->unique()->values()->all();
+
+        $preAuthKey = is_array($node['preAuthKey'] ?? null)
+            ? $this->mapPreAuthKey((array) $node['preAuthKey'])
+            : null;
+
+        return [
+            'id' => (string) ($node['id'] ?? uniqid('hs-node-', true)),
+            'name' => (string) ($node['name'] ?? $node['givenName'] ?? 'unknown'),
+            'given_name' => $node['givenName'] ?? $node['given_name'] ?? null,
+            'user_name' => is_array($user) ? ($user['name'] ?? $user['displayName'] ?? 'unknown') : (string) $user,
+            'user_id' => is_array($user) ? (string) ($user['id'] ?? '') : null,
+            'is_online' => (bool) ($node['online'] ?? false),
+            'ips' => array_values(array_filter((array) ($node['ipAddresses'] ?? $node['ip_addresses'] ?? []))),
+            'tags' => $tags,
+            'last_seen' => $node['lastSeen'] ?? $node['last_seen'] ?? null,
+            'expiry' => $node['expiry'] ?? null,
+            'created_at' => $node['createdAt'] ?? $node['created_at'] ?? null,
+            'register_method' => $this->formatRegisterMethod($node['registerMethod'] ?? $node['register_method'] ?? null),
+            'approved_routes' => array_values(array_filter((array) ($node['approvedRoutes'] ?? $node['approved_routes'] ?? []))),
+            'available_routes' => array_values(array_filter((array) ($node['availableRoutes'] ?? $node['available_routes'] ?? []))),
+            'subnet_routes' => array_values(array_filter((array) ($node['subnetRoutes'] ?? $node['subnet_routes'] ?? []))),
+            'machine_key' => $this->maskHeadscaleKey($node['machineKey'] ?? $node['machine_key'] ?? null),
+            'node_key' => $this->maskHeadscaleKey($node['nodeKey'] ?? $node['node_key'] ?? null),
+            'disco_key' => $this->maskHeadscaleKey($node['discoKey'] ?? $node['disco_key'] ?? null),
+            'pre_auth_key' => $preAuthKey,
+        ];
+    }
+
+    private function mapPreAuthKey(array $key): array
+    {
+        $user = $key['user'] ?? [];
+        $rawKey = (string) ($key['key'] ?? '');
+
+        return [
+            'id' => (string) ($key['id'] ?? uniqid('hs-preauth-', true)),
+            'user_id' => is_array($user) ? (string) ($user['id'] ?? '') : null,
+            'user_name' => is_array($user) ? ($user['name'] ?? $user['displayName'] ?? 'unknown') : (string) $user,
+            'reusable' => (bool) ($key['reusable'] ?? false),
+            'ephemeral' => (bool) ($key['ephemeral'] ?? false),
+            'used' => (bool) ($key['used'] ?? false),
+            'expiration' => $key['expiration'] ?? null,
+            'created_at' => $key['createdAt'] ?? $key['created_at'] ?? null,
+            'acl_tags' => array_values(array_filter((array) ($key['aclTags'] ?? $key['acl_tags'] ?? []))),
+            'key_preview' => $this->maskHeadscaleKey($rawKey),
+            'key_full' => $rawKey !== '' ? $rawKey : null,
+        ];
+    }
+
+    private function mapPolicy(array $policy): array
+    {
+        $text = (string) ($policy['policy'] ?? '');
+
+        return [
+            'text' => $text,
+            'updated_at' => $policy['updatedAt'] ?? $policy['updated_at'] ?? null,
+            'line_count' => $text === '' ? 0 : count(preg_split("/\r\n|\n|\r/", $text)),
+        ];
+    }
+
+    private function formatRegisterMethod(mixed $registerMethod): string
+    {
+        return match ((string) $registerMethod) {
+            'REGISTER_METHOD_AUTH_KEY', '1' => 'Auth Key',
+            'REGISTER_METHOD_CLI', '2' => 'CLI',
+            'REGISTER_METHOD_OIDC', '3' => 'OIDC',
+            default => 'Unknown',
+        };
+    }
+
+    private function maskHeadscaleKey(?string $value): ?string
+    {
+        $value = is_string($value) ? trim($value) : '';
+
+        if ($value === '') {
+            return null;
+        }
+
+        if (strlen($value) <= 12) {
+            return $value;
+        }
+
+        return substr($value, 0, 8).'...'.substr($value, -4);
+    }
+
+    private function attemptHeadscaleSection(callable $callback): array
+    {
+        try {
+            return [$callback(), null];
+        } catch (\Throwable $e) {
+            return [null, $e->getMessage()];
+        }
+    }
+
+    private function ensureHeadscaleSuccess(HttpResponse $response, string $action): void
+    {
+        if (! $response->successful()) {
+            throw new \RuntimeException("Headscale returned HTTP {$response->status()} while {$action}.");
+        }
     }
 
     private function headscaleHttpClient(Integration $integration, array $credentials)

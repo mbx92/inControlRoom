@@ -107,6 +107,12 @@ Route::middleware(['auth', 'site-scope'])->group(function () {
 
         Route::prefix('headscale')->name('headscale.')->group(function () {
             Route::post('/{integration}/terminal', [HeadscaleController::class, 'createTerminalSession'])->name('terminal.create');
+            Route::post('/{integration}/nodes/{nodeId}/tags', [HeadscaleController::class, 'updateNodeTags'])->name('nodes.tags');
+            Route::post('/{integration}/nodes/{nodeId}/routes', [HeadscaleController::class, 'updateNodeRoutes'])->name('nodes.routes');
+            Route::post('/{integration}/nodes/{nodeId}/rename', [HeadscaleController::class, 'renameNode'])->name('nodes.rename');
+            Route::post('/{integration}/nodes/{nodeId}/expire', [HeadscaleController::class, 'expireNode'])->name('nodes.expire');
+            Route::post('/{integration}/preauthkeys', [HeadscaleController::class, 'createPreAuthKey'])->name('preauth-keys.create');
+            Route::post('/{integration}/preauthkeys/{keyId}/expire', [HeadscaleController::class, 'expirePreAuthKey'])->name('preauth-keys.expire');
         });
 
         Route::prefix('settings/vault')->name('vault.')->group(function () {
@@ -143,6 +149,15 @@ Route::middleware(['auth', 'site-scope'])->group(function () {
             Route::post('/', [VaultEntryController::class, 'store'])->name('store');
             Route::get('/{vault}/edit', [VaultEntryController::class, 'edit'])->name('edit');
             Route::put('/{vault}', [VaultEntryController::class, 'update'])->name('update');
+        });
+
+        Route::prefix('headscale')->name('headscale.')->group(function () {
+            Route::put('/{integration}/policy', [HeadscaleController::class, 'updatePolicy'])->name('policy.update');
+            Route::post('/{integration}/apikeys', [HeadscaleController::class, 'createApiKey'])->name('api-keys.create');
+            Route::delete('/{integration}/apikeys/{prefix}', [HeadscaleController::class, 'deleteApiKey'])->name('api-keys.delete');
+            Route::post('/{integration}/users', [HeadscaleController::class, 'createUser'])->name('users.create');
+            Route::post('/{integration}/users/{userId}/rename', [HeadscaleController::class, 'renameUser'])->name('users.rename');
+            Route::delete('/{integration}/users/{userId}', [HeadscaleController::class, 'deleteUser'])->name('users.delete');
         });
 
         Route::prefix('settings/sites')->name('sites.')->group(function () {
