@@ -5,6 +5,7 @@
     "scripts": {
         "build": "vite build",
         "console-proxy": "node scripts/proxmox-console-proxy.mjs",
+        "ssh-terminal-proxy": "node scripts/ssh-terminal-proxy.mjs",
         "dev": "vite",
         "dev:lan": "VITE_DEV_LAN=1 vite --host 0.0.0.0 --port 5173",
         "serve:lan": "php artisan serve --host=0.0.0.0 --port=8000",
@@ -27,8 +28,11 @@
         "@vue-flow/core": "^1.48.2",
         "@vue-flow/minimap": "^1.5.4",
         "daisyui": "^5.5.23",
+        "ssh2": "^1.17.0",
         "vue": "^3.5.37",
         "ws": "^8.18.3",
+        "xterm": "^5.3.0",
+        "xterm-addon-fit": "^0.8.0",
         "ziggy-js": "^2.6.2"
     }
 }

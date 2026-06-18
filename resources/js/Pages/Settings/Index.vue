@@ -22,6 +22,25 @@ const isAdmin = computed(() => page.props.auth.permissions?.is_admin ?? false);
 
         <div class="space-y-8">
             <section>
+                <div class="eyebrow">Control Plane</div>
+                <h2 class="text-title-lg text-body mt-3">Headscale Manager</h2>
+                <p class="text-body-sm text-muted mt-2 mb-6">
+                    Modul khusus untuk domain Headscale, API key dari vault, monitoring node, dan user inventory dari control plane.
+                </p>
+
+                <div class="flex flex-wrap gap-3">
+                    <Link :href="route('headscale.index')" class="btn btn-primary">
+                        Open Headscale Module
+                    </Link>
+                    <Link :href="route('integrations.index')" class="btn btn-secondary">
+                        View All Integrations
+                    </Link>
+                </div>
+            </section>
+
+            <hr class="border-border" />
+
+            <section>
                 <div class="eyebrow">Appearance</div>
                 <h2 class="text-title-lg text-body mt-3">Theme Control</h2>
                 <p class="text-body-sm text-muted mt-2 mb-6">

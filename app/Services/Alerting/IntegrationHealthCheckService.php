@@ -26,6 +26,7 @@ class IntegrationHealthCheckService
                 'proxmox' => $this->testProxmox($integration->base_url, $credentials, $verifySsl),
                 'docker' => $this->dockerMonitoringService->check($integration),
                 'nvr' => $this->nvrMonitoringService->check($integration),
+                'headscale' => $this->testHeadscale($integration->base_url, $credentials, $verifySsl),
                 'custom_api' => $this->testCustomApi($integration->base_url, $credentials, $config),
                 default => [
                     'success' => false,
@@ -124,6 +125,71 @@ class IntegrationHealthCheckService
         ];
     }
 
+    private function testHeadscale(string $baseUrl, array $credentials, bool $verifySsl): array
+    {
+        $apiBase = $this->headscaleApiBase($baseUrl);
+        $nodesEndpoint = "{$apiBase}/node";
+        $usersEndpoint = "{$apiBase}/user";
+
+        $request = Http::withOptions(['verify' => $verifySsl])
+            ->timeout(10)
+            ->withToken((string) ($credentials['token'] ?? ''));
+
+        $startedAt = microtime(true);
+        $response = $request->get($nodesEndpoint);
+        $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
+
+        if (! $response->successful()) {
+            return [
+                'success' => false,
+                'message' => "Headscale returned HTTP {$response->status()}",
+                'meta' => [
+                    'kind' => 'headscale',
+                    'product' => 'Headscale',
+                    'verify_ssl' => $verifySsl,
+                    'health_endpoint' => $nodesEndpoint,
+                    'api_reachable' => true,
+                    'auth_status' => in_array($response->status(), [401, 403], true) ? 'failed' : 'unknown',
+                    'latency_ms' => $latencyMs,
+                    'http_status' => $response->status(),
+                    'health_method' => 'GET',
+                    'expected_status' => 200,
+                ],
+            ];
+        }
+
+        $nodesPayload = $response->json();
+        $nodes = collect($nodesPayload['nodes'] ?? $nodesPayload['node'] ?? $nodesPayload ?? [])
+            ->filter(fn ($item) => is_array($item))
+            ->values();
+
+        $usersResponse = $request->get($usersEndpoint);
+        $usersPayload = $usersResponse->successful() ? $usersResponse->json() : [];
+        $users = collect($usersPayload['users'] ?? $usersPayload['user'] ?? $usersPayload ?? [])
+            ->filter(fn ($item) => is_array($item))
+            ->values();
+
+        return [
+            'success' => true,
+            'message' => "Connected to Headscale with {$nodes->count()} nodes discovered",
+            'meta' => [
+                'kind' => 'headscale',
+                'product' => 'Headscale',
+                'verify_ssl' => $verifySsl,
+                'health_endpoint' => $nodesEndpoint,
+                'api_reachable' => true,
+                'auth_status' => 'valid',
+                'latency_ms' => $latencyMs,
+                'http_status' => $response->status(),
+                'health_method' => 'GET',
+                'expected_status' => 200,
+                'node_count' => $nodes->count(),
+                'user_count' => $users->count(),
+                'base_domain' => parse_url($baseUrl, PHP_URL_HOST) ?: $baseUrl,
+            ],
+        ];
+    }
+
     private function testCustomApi(string $baseUrl, array $credentials, array $config): array
     {
         $verifySsl = (bool) ($config['verify_ssl'] ?? true);
@@ -217,7 +283,9 @@ class IntegrationHealthCheckService
                 ? rtrim($integration->base_url, '/').'/api2/json/version'
                 : ($integration->type === 'docker'
                     ? rtrim($integration->base_url, '/').'/_ping'
-                    : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health')),
+                    : ($integration->type === 'headscale'
+                        ? $this->headscaleApiBase($integration->base_url).'/node'
+                        : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health'))),
             'api_reachable' => false,
             'auth_status' => str_contains($messageLower, 'auth')
                 || str_contains($messageLower, 'token')
@@ -226,12 +294,21 @@ class IntegrationHealthCheckService
                 ? 'failed'
                 : 'unknown',
             'latency_ms' => null,
-            'health_method' => $integration->type === 'docker'
+            'health_method' => in_array($integration->type, ['docker', 'headscale'], true)
                 ? 'GET'
                 : ($integration->config['health_method'] ?? 'GET'),
-            'expected_status' => $integration->type === 'docker'
+            'expected_status' => in_array($integration->type, ['docker', 'headscale'], true)
                 ? 200
                 : ($integration->config['health_expected_status'] ?? 200),
         ];
+    }
+
+    private function headscaleApiBase(string $baseUrl): string
+    {
+        $baseUrl = rtrim($baseUrl, '/');
+
+        return str_ends_with($baseUrl, '/api/v1')
+            ? $baseUrl
+            : "{$baseUrl}/api/v1";
     }
 }

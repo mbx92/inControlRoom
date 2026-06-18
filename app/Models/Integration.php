@@ -47,6 +47,7 @@ class Integration extends Model
         'proxmox' => 'Proxmox VE',
         'docker' => 'Docker Engine',
         'nvr' => 'Hikvision NVR',
+        'headscale' => 'Headscale Control Server',
         'custom_api' => 'Custom API',
     ];
 

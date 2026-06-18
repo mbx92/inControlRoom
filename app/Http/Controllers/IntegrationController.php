@@ -734,6 +734,15 @@ class IntegrationController extends Controller
             ];
         }
 
+        if ($integration->type === 'headscale' && ! empty($meta)) {
+            return [
+                'headline' => trim(collect([$meta['product'] ?? null, $meta['base_domain'] ?? null])->filter()->implode(' ')),
+                'node_count' => $meta['node_count'] ?? null,
+                'user_count' => $meta['user_count'] ?? null,
+                'verify_ssl' => $meta['verify_ssl'] ?? null,
+            ];
+        }
+
         if ($integration->type !== 'proxmox' || empty($meta)) {
             if ($integration->type !== 'docker' || empty($meta)) {
                 return null;
@@ -783,7 +792,9 @@ class IntegrationController extends Controller
                 ? rtrim($integration->base_url, '/').'/api2/json/version'
                 : ($integration->type === 'docker'
                     ? rtrim($integration->base_url, '/').'/_ping'
-                    : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health'))),
+                    : ($integration->type === 'headscale'
+                        ? $this->headscaleApiBase($integration->base_url).'/node'
+                        : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health')))),
             'reachable' => $meta['api_reachable'] ?? ($status === 'success'),
             'auth_status' => $meta['auth_status'] ?? ($status === 'success' ? 'valid' : 'unknown'),
             'latency_ms' => $meta['latency_ms'] ?? null,
@@ -791,8 +802,8 @@ class IntegrationController extends Controller
             'http_status' => $meta['http_status'] ?? null,
             'checked_at' => $integration->last_tested_at?->toDateTimeString(),
             'verify_ssl' => $meta['verify_ssl'] ?? ($integration->config['verify_ssl'] ?? true),
-            'method' => $meta['health_method'] ?? ($integration->type === 'docker' ? 'GET' : ($integration->config['health_method'] ?? 'GET')),
-            'expected_status' => $meta['expected_status'] ?? ($integration->type === 'docker' ? 200 : ($integration->config['health_expected_status'] ?? 200)),
+            'method' => $meta['health_method'] ?? (in_array($integration->type, ['docker', 'headscale'], true) ? 'GET' : ($integration->config['health_method'] ?? 'GET')),
+            'expected_status' => $meta['expected_status'] ?? (in_array($integration->type, ['docker', 'headscale'], true) ? 200 : ($integration->config['health_expected_status'] ?? 200)),
         ];
     }
 
@@ -808,7 +819,9 @@ class IntegrationController extends Controller
                 ? rtrim($integration->base_url, '/').'/api2/json/version'
                 : ($integration->type === 'docker'
                     ? rtrim($integration->base_url, '/').'/_ping'
-                    : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health')),
+                    : ($integration->type === 'headscale'
+                        ? $this->headscaleApiBase($integration->base_url).'/node'
+                        : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health'))),
             'api_reachable' => false,
             'auth_status' => str_contains($messageLower, 'auth')
                 || str_contains($messageLower, 'token')
@@ -817,8 +830,8 @@ class IntegrationController extends Controller
                 ? 'failed'
                 : 'unknown',
             'latency_ms' => null,
-            'health_method' => $integration->type === 'docker' ? 'GET' : ($integration->config['health_method'] ?? 'GET'),
-            'expected_status' => $integration->type === 'docker' ? 200 : ($integration->config['health_expected_status'] ?? 200),
+            'health_method' => in_array($integration->type, ['docker', 'headscale'], true) ? 'GET' : ($integration->config['health_method'] ?? 'GET'),
+            'expected_status' => in_array($integration->type, ['docker', 'headscale'], true) ? 200 : ($integration->config['health_expected_status'] ?? 200),
         ];
     }
 
@@ -887,6 +900,18 @@ class IntegrationController extends Controller
             'host_asset_id' => ! empty($config['host_asset_id']) ? (string) $config['host_asset_id'] : null,
             'username' => trim((string) ($config['username'] ?? '')),
         ];
+
+        if (($validated['type'] ?? null) === 'headscale') {
+            $validated['config'] = [
+                ...$validated['config'],
+                'auth_mode' => 'bearer',
+                'health_path' => '/api/v1/node',
+                'health_method' => 'GET',
+                'health_expected_status' => 200,
+                'host_asset_id' => null,
+                'username' => '',
+            ];
+        }
 
         return $validated;
     }
@@ -958,6 +983,12 @@ class IntegrationController extends Controller
             ]);
         }
 
+        if ($type === 'headscale' && ! $vaultEntryId) {
+            throw ValidationException::withMessages([
+                'vault_entry_id' => 'Headscale integration requires an API key from vault.',
+            ]);
+        }
+
         if ($type === 'custom_api' && $authMode === 'bearer' && ! $vaultEntryId) {
             throw ValidationException::withMessages([
                 'vault_entry_id' => 'Bearer authentication requires a vault entry.',
@@ -976,6 +1007,15 @@ class IntegrationController extends Controller
 
         $vaultEntry = VaultEntry::query()->findOrFail($vaultEntryId);
         $this->assertVaultEntryUsableForScope($vaultEntry, $siteId);
+    }
+
+    private function headscaleApiBase(string $baseUrl): string
+    {
+        $baseUrl = rtrim($baseUrl, '/');
+
+        return str_ends_with($baseUrl, '/api/v1')
+            ? $baseUrl
+            : "{$baseUrl}/api/v1";
     }
 
     private function assertIntegrationHostAssetPolicy(array $validated): void

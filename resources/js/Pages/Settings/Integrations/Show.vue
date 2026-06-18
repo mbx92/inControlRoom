@@ -302,13 +302,38 @@ function goToPage(pageParam, page) {
                 </div>
             </section>
 
+            <section
+                v-if="integration.type === 'headscale' && integration.source_summary"
+                class="panel-card p-4 sm:p-5"
+            >
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Domain</div>
+                        <div class="text-title-sm text-body mt-3 break-all">{{ integration.base_host }}</div>
+                        <div class="text-caption text-muted mt-2">control server</div>
+                    </article>
+
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Nodes</div>
+                        <div class="text-number-sm text-body mt-3">{{ integration.source_summary.node_count ?? '—' }}</div>
+                        <div class="text-caption text-muted mt-2">visible through API</div>
+                    </article>
+
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Users</div>
+                        <div class="text-number-sm text-body mt-3">{{ integration.source_summary.user_count ?? '—' }}</div>
+                        <div class="text-caption text-muted mt-2">fetched from control plane</div>
+                    </article>
+                </div>
+            </section>
+
             <div class="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_360px]">
                 <section class="space-y-6">
                     <section class="panel-card p-6">
                         <div class="eyebrow">Overview</div>
                         <div class="mt-5 grid gap-5 sm:grid-cols-2">
                             <div>
-                                <div class="text-caption text-muted">Endpoint</div>
+                                <div class="text-caption text-muted">{{ integration.type === 'headscale' ? 'Domain' : 'Endpoint' }}</div>
                                 <div class="text-body-sm text-body mt-2 break-all font-mono-num">
                                     {{ integration.base_url }}
                                 </div>
@@ -346,6 +371,20 @@ function goToPage(pageParam, page) {
                                 <div class="text-caption text-muted">API Health</div>
                                 <div class="text-body-sm text-body mt-2">
                                     {{ integration.api_health?.label ?? 'Not tested' }}
+                                </div>
+                            </div>
+
+                            <div v-if="integration.type === 'headscale'">
+                                <div class="text-caption text-muted">Authentication</div>
+                                <div class="text-body-sm text-body mt-2">
+                                    Bearer API key via vault
+                                </div>
+                            </div>
+
+                            <div v-if="integration.type === 'headscale'">
+                                <div class="text-caption text-muted">Management Route</div>
+                                <div class="text-body-sm text-body mt-2 break-all font-mono-num">
+                                    /api/v1/node
                                 </div>
                             </div>
                         </div>
@@ -532,6 +571,46 @@ function goToPage(pageParam, page) {
                                 <div class="text-caption text-muted">SSL</div>
                                 <div class="text-body-sm text-body mt-2">
                                     {{ integration.source_summary.verify_ssl === false ? 'Disabled' : 'Enabled' }}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section
+                        v-if="integration.type === 'headscale' && integration.source_summary"
+                        class="panel-card p-6"
+                    >
+                        <div class="eyebrow">Platform Summary</div>
+                        <div class="mt-4 text-title-sm text-body">
+                            {{ integration.source_summary.headline }}
+                        </div>
+
+                        <div class="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Nodes</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.node_count ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Users</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.user_count ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">SSL</div>
+                                <div class="text-body-sm text-body mt-2">
+                                    {{ integration.source_summary.verify_ssl === false ? 'Disabled' : 'Enabled' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Secret Source</div>
+                                <div class="text-body-sm text-body mt-2">
+                                    {{ integration.secret_source_label }}
                                 </div>
                             </div>
                         </div>

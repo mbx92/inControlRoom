@@ -61,8 +61,9 @@ const selectedVaultEntry = computed(() => (
 const isProxmox = computed(() => props.integration.type === 'proxmox');
 const isDocker = computed(() => props.integration.type === 'docker');
 const isNvr = computed(() => props.integration.type === 'nvr');
+const isHeadscale = computed(() => props.integration.type === 'headscale');
 const requiresVaultEntry = computed(() => (
-    isProxmox.value || isNvr.value || form.config.auth_mode === 'bearer'
+    isProxmox.value || isNvr.value || isHeadscale.value || form.config.auth_mode === 'bearer'
 ));
 
 const hostAssetOptions = computed(() => (
@@ -157,7 +158,7 @@ function submit() {
                     </div>
 
                     <div>
-                        <label class="form-label" for="integration-base-url">Base URL</label>
+                        <label class="form-label" for="integration-base-url">{{ isHeadscale ? 'Domain / Server URL' : 'Base URL' }}</label>
                         <input
                             id="integration-base-url"
                             v-model="form.base_url"
@@ -166,6 +167,9 @@ function submit() {
                             :class="{ 'input-error': form.errors.base_url }"
                             required
                         />
+                        <p v-if="isHeadscale" class="text-body-sm text-muted mt-2">
+                            Gunakan domain Headscale. InfraControl akan memeriksa endpoint <span class="font-mono-num">/api/v1/node</span>.
+                        </p>
                         <p v-if="form.errors.base_url" class="form-error">{{ form.errors.base_url }}</p>
                     </div>
 
@@ -208,9 +212,11 @@ function submit() {
                         <p v-if="form.errors['config.username']" class="form-error">{{ form.errors['config.username'] }}</p>
                     </div>
 
-                    <div v-if="!isProxmox && !isNvr" class="divider text-caption">{{ isDocker ? 'Docker Access' : 'API Health' }}</div>
+                    <div v-if="!isProxmox && !isNvr && !isHeadscale" class="divider text-caption">{{ isDocker ? 'Docker Access' : 'API Health' }}</div>
 
-                    <div v-if="!isProxmox && !isDocker && !isNvr" class="grid gap-5 sm:grid-cols-2">
+                    <div v-if="isHeadscale" class="divider text-caption">Headscale Access</div>
+
+                    <div v-if="!isProxmox && !isDocker && !isNvr && !isHeadscale" class="grid gap-5 sm:grid-cols-2">
                         <div>
                             <label class="form-label" for="health-path">Health Path</label>
                             <input
@@ -270,8 +276,12 @@ function submit() {
                         </div>
                     </div>
 
+                    <div v-if="isHeadscale" class="rounded-xl border border-hairline bg-base-300 px-4 py-4 text-body-sm text-muted">
+                        Headscale memakai Bearer API key yang disimpan di Vault. Endpoint health check terkunci ke <span class="text-body font-mono-num">/api/v1/node</span>.
+                    </div>
+
                     <div>
-                        <label class="form-label" for="integration-vault-entry">Vault Secret</label>
+                        <label class="form-label" for="integration-vault-entry">{{ isHeadscale ? 'Headscale API Key' : 'Vault Secret' }}</label>
                         <select
                             id="integration-vault-entry"
                             v-model="form.vault_entry_id"
@@ -284,6 +294,9 @@ function submit() {
                                 {{ entry.name }} · {{ entry.kind_label }} · {{ entry.scope_label }}
                             </option>
                         </select>
+                        <p v-if="isHeadscale" class="text-body-sm text-muted mt-2">
+                            Rotasi API key dilakukan dari Vault, bukan di form ini.
+                        </p>
                         <p v-if="form.errors.vault_entry_id" class="form-error">{{ form.errors.vault_entry_id }}</p>
                     </div>
 
@@ -295,7 +308,7 @@ function submit() {
                     <label class="mt-2 flex items-center gap-3 cursor-pointer">
                         <input v-model="form.config.verify_ssl" type="checkbox" class="checkbox checkbox-primary" />
                         <span class="text-body-sm text-muted">
-                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : (isDocker ? 'Verify SSL certificate during Docker API checks' : (isNvr ? 'Verify SSL certificate during NVR API checks' : 'Verify SSL certificate during API health checks')) }}
+                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : (isDocker ? 'Verify SSL certificate during Docker API checks' : (isNvr ? 'Verify SSL certificate during NVR API checks' : (isHeadscale ? 'Verify SSL certificate during Headscale API checks' : 'Verify SSL certificate during API health checks'))) }}
                         </span>
                     </label>
 
@@ -323,9 +336,11 @@ function submit() {
                             ? 'Proxmox integrations read their token from vault, so rotation should happen on the secret entry rather than in this form.'
                             : (isNvr
                                 ? 'NVR integrations use HTTP Digest auth. Username is stored in this form, password comes from the attached vault entry as a generic secret.'
-                                : (isDocker
-                                    ? 'Docker integrations assume one host endpoint and keep monitoring read-only. If you use auth in front of Docker, rotate the bearer token in vault.'
-                                    : 'Custom API integrations let you target any service health endpoint, including Node-based apps with bearer token auth.')) }}
+                                : (isHeadscale
+                                    ? 'Headscale integrations keep the API key in Vault. Change the domain here, but rotate the key at the secret source.'
+                                    : (isDocker
+                                        ? 'Docker integrations assume one host endpoint and keep monitoring read-only. If you use auth in front of Docker, rotate the bearer token in vault.'
+                                        : 'Custom API integrations let you target any service health endpoint, including Node-based apps with bearer token auth.'))) }}
                     </p>
 
                     <div v-if="selectedVaultEntry" class="mt-5 rounded-lg border border-hairline bg-base-300 px-4 py-4">

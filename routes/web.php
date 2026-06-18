@@ -5,6 +5,7 @@ use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AlertRuleController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\HeadscaleController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\InventoryAssetController;
 use App\Http\Controllers\LabelPrinterController;
@@ -30,6 +31,10 @@ if (app()->environment('local')) {
 Route::get('/proxy/proxmox-console/{token}', [IntegrationController::class, 'guestConsoleProxyPayload'])
     ->middleware('signed')
     ->name('integrations.guests.console.proxy-payload');
+
+Route::get('/proxy/headscale-terminal/{token}', [HeadscaleController::class, 'terminalProxyPayload'])
+    ->middleware('signed')
+    ->name('headscale.terminal.proxy-payload');
 
 Route::get('/inventory/{asset}/scan', [InventoryAssetController::class, 'scan'])
     ->middleware('signed')
@@ -72,6 +77,12 @@ Route::middleware(['auth', 'site-scope'])->group(function () {
             ->name('guests.show');
     });
 
+    Route::prefix('headscale')->name('headscale.')->group(function () {
+        Route::get('/', [HeadscaleController::class, 'index'])->name('index');
+        Route::get('/{integration}', [HeadscaleController::class, 'show'])->name('show');
+        Route::get('/{integration}/terminal', [HeadscaleController::class, 'terminalPage'])->name('terminal.page');
+    });
+
     Route::prefix('settings/vault')->name('vault.')->group(function () {
         Route::get('/', [VaultEntryController::class, 'index'])->name('index');
         Route::get('/{vault}', [VaultEntryController::class, 'show'])->name('show');
@@ -92,6 +103,10 @@ Route::middleware(['auth', 'site-scope'])->group(function () {
             Route::post('/{integration}/test', [IntegrationController::class, 'test'])->name('test');
             Route::get('/{integration}/guests/{guestType}/{node}/{vmid}/console', [IntegrationController::class, 'guestConsole'])
                 ->name('guests.console');
+        });
+
+        Route::prefix('headscale')->name('headscale.')->group(function () {
+            Route::post('/{integration}/terminal', [HeadscaleController::class, 'createTerminalSession'])->name('terminal.create');
         });
 
         Route::prefix('settings/vault')->name('vault.')->group(function () {

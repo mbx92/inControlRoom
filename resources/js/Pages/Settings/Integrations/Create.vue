@@ -35,8 +35,9 @@ const selectedVaultEntry = computed(() => (
 const isProxmox = computed(() => form.type === 'proxmox');
 const isDocker = computed(() => form.type === 'docker');
 const isNvr = computed(() => form.type === 'nvr');
+const isHeadscale = computed(() => form.type === 'headscale');
 const requiresVaultEntry = computed(() => (
-    isProxmox.value || isNvr.value || form.config.auth_mode === 'bearer'
+    isProxmox.value || isNvr.value || isHeadscale.value || form.config.auth_mode === 'bearer'
 ));
 
 const hostAssetOptions = computed(() => (
@@ -44,7 +45,13 @@ const hostAssetOptions = computed(() => (
 ));
 
 const pageTitle = computed(() => (
-    isProxmox.value ? 'Add Integration' : (isDocker.value ? 'Add Docker Host' : (isNvr.value ? 'Add Hikvision NVR' : 'Add Custom API'))
+    isProxmox.value
+        ? 'Add Integration'
+        : (isDocker.value
+            ? 'Add Docker Host'
+            : (isNvr.value
+                ? 'Add Hikvision NVR'
+                : (isHeadscale.value ? 'Add Headscale' : 'Add Custom API')))
 ));
 
 const pageSubtitle = computed(() => (
@@ -54,7 +61,9 @@ const pageSubtitle = computed(() => (
             ? 'Register a Docker Engine endpoint for read-only health checks, container inventory, and lightweight runtime metrics.'
             : (isNvr.value
                 ? 'Register a Hikvision NVR endpoint to monitor camera channels, recording status, and generate RTSP stream links.'
-                : 'Register any API-based system, define its health endpoint, and optionally attach a bearer token from vault.'))
+                : (isHeadscale.value
+                    ? 'Register a Headscale control server with its domain and API key so operators can validate reachability from the control room.'
+                    : 'Register any API-based system, define its health endpoint, and optionally attach a bearer token from vault.')))
 ));
 
 function submit() {
@@ -115,7 +124,7 @@ function submit() {
                             id="integration-name"
                             v-model="form.name"
                             type="text"
-                            :placeholder="isProxmox ? 'Production Proxmox' : (isDocker ? 'Docker Host Production' : 'Node API Production')"
+                            :placeholder="isProxmox ? 'Production Proxmox' : (isDocker ? 'Docker Host Production' : (isNvr ? 'NVR Lobby Utama' : (isHeadscale ? 'Headscale Primary' : 'Node API Production')))"
                             class="input mt-2 w-full"
                             :class="{ 'input-error': form.errors.name }"
                             required
@@ -143,16 +152,19 @@ function submit() {
                     </div>
 
                     <div>
-                        <label class="form-label" for="integration-base-url">Base URL</label>
+                        <label class="form-label" for="integration-base-url">{{ isHeadscale ? 'Domain / Server URL' : 'Base URL' }}</label>
                         <input
                             id="integration-base-url"
                             v-model="form.base_url"
                             type="url"
-                            :placeholder="isProxmox ? 'https://proxmox.example.com:8006' : (isDocker ? 'https://docker.example.com:2376' : (isNvr ? 'http://192.168.1.64' : 'https://api.example.com'))"
+                            :placeholder="isProxmox ? 'https://proxmox.example.com:8006' : (isDocker ? 'https://docker.example.com:2376' : (isNvr ? 'http://192.168.1.64' : (isHeadscale ? 'https://headscale.example.com' : 'https://api.example.com')))"
                             class="input mt-2 w-full font-mono-num"
                             :class="{ 'input-error': form.errors.base_url }"
                             required
                         />
+                        <p v-if="isHeadscale" class="text-body-sm text-muted mt-2">
+                            Masukkan domain Headscale. Sistem akan memakai endpoint <span class="font-mono-num">/api/v1/node</span> untuk validasi.
+                        </p>
                         <p v-if="form.errors.base_url" class="form-error">{{ form.errors.base_url }}</p>
                     </div>
 
@@ -195,9 +207,11 @@ function submit() {
                         <p v-if="form.errors['config.username']" class="form-error">{{ form.errors['config.username'] }}</p>
                     </div>
 
-                    <div v-if="!isProxmox && !isNvr" class="divider text-caption">{{ isDocker ? 'Docker Access' : 'API Health' }}</div>
+                    <div v-if="!isProxmox && !isNvr && !isHeadscale" class="divider text-caption">{{ isDocker ? 'Docker Access' : 'API Health' }}</div>
 
-                    <div v-if="!isProxmox && !isDocker && !isNvr" class="grid gap-5 sm:grid-cols-2">
+                    <div v-if="isHeadscale" class="divider text-caption">Headscale Access</div>
+
+                    <div v-if="!isProxmox && !isDocker && !isNvr && !isHeadscale" class="grid gap-5 sm:grid-cols-2">
                         <div>
                             <label class="form-label" for="health-path">Health Path</label>
                             <input
@@ -258,8 +272,12 @@ function submit() {
                         </div>
                     </div>
 
+                    <div v-if="isHeadscale" class="rounded-xl border border-hairline bg-base-300 px-4 py-4 text-body-sm text-muted">
+                        Headscale memakai Bearer API key. Simpan key di Vault lalu pilih di field bawah. Health check default mengarah ke <span class="text-body font-mono-num">/api/v1/node</span>.
+                    </div>
+
                     <div>
-                        <label class="form-label" for="integration-vault-entry">Vault Secret</label>
+                        <label class="form-label" for="integration-vault-entry">{{ isHeadscale ? 'Headscale API Key' : 'Vault Secret' }}</label>
                         <select
                             id="integration-vault-entry"
                             v-model="form.vault_entry_id"
@@ -277,9 +295,11 @@ function submit() {
                                 ? 'Proxmox always requires a vault entry containing its API token.'
                                 : (isNvr
                                     ? 'Hikvision NVR requires a vault entry containing the camera password (stored as generic secret).'
-                                    : (isDocker
-                                        ? 'Optional for open Docker endpoints. Required only when your proxy expects a bearer token.'
-                                        : 'Optional for open health endpoints. Required only when auth mode uses a bearer token.')) }}
+                                    : (isHeadscale
+                                        ? 'Headscale requires a vault entry containing the API key. The key is not entered directly here so it stays encrypted.'
+                                        : (isDocker
+                                            ? 'Optional for open Docker endpoints. Required only when your proxy expects a bearer token.'
+                                            : 'Optional for open health endpoints. Required only when auth mode uses a bearer token.'))) }}
                         </p>
                         <p v-if="form.errors.vault_entry_id" class="form-error">{{ form.errors.vault_entry_id }}</p>
                     </div>
@@ -287,7 +307,7 @@ function submit() {
                     <label class="mt-2 flex items-center gap-3 cursor-pointer">
                         <input v-model="form.config.verify_ssl" type="checkbox" class="checkbox checkbox-primary" />
                         <span class="text-body-sm text-muted">
-                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : (isDocker ? 'Verify SSL certificate during Docker API checks' : (isNvr ? 'Verify SSL certificate during NVR API checks' : 'Verify SSL certificate during API health checks')) }}
+                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : (isDocker ? 'Verify SSL certificate during Docker API checks' : (isNvr ? 'Verify SSL certificate during NVR API checks' : (isHeadscale ? 'Verify SSL certificate during Headscale API checks' : 'Verify SSL certificate during API health checks'))) }}
                         </span>
                     </label>
 
@@ -315,9 +335,11 @@ function submit() {
                             ? 'Choose a vault-backed API token and InfraControl will use it for inventory plus API health checks.'
                             : (isNvr
                                 ? 'Enter the camera username and attach a vault entry with the password. InfraControl will use Hikvision ISAPI for health checks, channel inventory, and recording status.'
-                                : (isDocker
-                                    ? 'Use Docker for a single host endpoint when the main need is container health, runtime inventory, and basic CPU/memory telemetry.'
-                                    : 'Use Custom API for Node services or other internal systems where the main need is endpoint reachability and authentication health.')) }}
+                                : (isHeadscale
+                                    ? 'Use the Headscale base domain and attach a vault entry that contains the API key. InfraControl validates the control server through its REST API.'
+                                    : (isDocker
+                                        ? 'Use Docker for a single host endpoint when the main need is container health, runtime inventory, and basic CPU/memory telemetry.'
+                                        : 'Use Custom API for Node services or other internal systems where the main need is endpoint reachability and authentication health.'))) }}
                     </p>
 
                     <div v-if="selectedVaultEntry" class="mt-5 rounded-lg border border-hairline bg-base-300 px-4 py-4">
@@ -337,7 +359,9 @@ function submit() {
                                         ? 'Point this integration to a read-only Docker API or proxy endpoint. The built-in health probe always targets /_ping.'
                                         : (isNvr
                                             ? 'Point this integration to your Hikvision NVR IP address (e.g., http://192.168.1.64). Health probe uses /ISAPI/System/status.'
-                                            : 'Point health checks to a stable endpoint such as /health or /api/health.') }}
+                                            : (isHeadscale
+                                                ? 'Point this integration to your Headscale domain. InfraControl appends /api/v1/node and sends the vault-backed API key as Bearer auth.'
+                                                : 'Point health checks to a stable endpoint such as /health or /api/health.')) }}
                                 </p>
                             </div>
                         </div>

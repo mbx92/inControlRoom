@@ -54,6 +54,10 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    'ssh_terminal_proxy_url' => env('SSH_TERMINAL_PROXY_URL'),
+
+    'ssh_terminal_proxy_port' => (int) env('SSH_TERMINAL_PROXY_PORT', 8078),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone
