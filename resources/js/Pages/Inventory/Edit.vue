@@ -294,10 +294,10 @@ function submit() {
                         <button
                             type="submit"
                             class="btn btn-primary"
-                            :class="{ loading: form.processing }"
                             :disabled="form.processing"
                         >
-                            Save Changes
+                            <span v-if="form.processing" class="loading loading-spinner loading-xs"></span>
+                            {{ form.processing ? 'Saving...' : 'Save Changes' }}
                         </button>
                         <Link :href="route('inventory.show', asset.id)" class="btn btn-ghost">Cancel</Link>
                     </div>

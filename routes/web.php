@@ -36,6 +36,10 @@ Route::get('/proxy/headscale-terminal/{token}', [HeadscaleController::class, 'te
     ->middleware('signed')
     ->name('headscale.terminal.proxy-payload');
 
+Route::get('/proxy/headscale-vnc/{token}', [HeadscaleController::class, 'vncProxyPayload'])
+    ->middleware('signed')
+    ->name('headscale.vnc.proxy-payload');
+
 Route::get('/inventory/{asset}/scan', [InventoryAssetController::class, 'scan'])
     ->middleware('signed')
     ->name('inventory.scan');
@@ -81,6 +85,7 @@ Route::middleware(['auth', 'site-scope'])->group(function () {
         Route::get('/', [HeadscaleController::class, 'index'])->name('index');
         Route::get('/{integration}', [HeadscaleController::class, 'show'])->name('show');
         Route::get('/{integration}/terminal', [HeadscaleController::class, 'terminalPage'])->name('terminal.page');
+        Route::get('/{integration}/vnc', [HeadscaleController::class, 'vncPage'])->name('vnc.page');
     });
 
     Route::prefix('settings/vault')->name('vault.')->group(function () {
@@ -107,6 +112,7 @@ Route::middleware(['auth', 'site-scope'])->group(function () {
 
         Route::prefix('headscale')->name('headscale.')->group(function () {
             Route::post('/{integration}/terminal', [HeadscaleController::class, 'createTerminalSession'])->name('terminal.create');
+            Route::post('/{integration}/vnc', [HeadscaleController::class, 'createVncSession'])->name('vnc.create');
             Route::post('/{integration}/nodes/{nodeId}/tags', [HeadscaleController::class, 'updateNodeTags'])->name('nodes.tags');
             Route::post('/{integration}/nodes/{nodeId}/routes', [HeadscaleController::class, 'updateNodeRoutes'])->name('nodes.routes');
             Route::post('/{integration}/nodes/{nodeId}/rename', [HeadscaleController::class, 'renameNode'])->name('nodes.rename');
@@ -166,6 +172,13 @@ Route::middleware(['auth', 'site-scope'])->group(function () {
             Route::post('/', [SiteController::class, 'store'])->name('store');
             Route::get('/{site}/edit', [SiteController::class, 'edit'])->name('edit');
             Route::put('/{site}', [SiteController::class, 'update'])->name('update');
+        });
+
+        Route::prefix('settings/runtime-services')->name('settings.runtime-services.')->group(function () {
+            Route::get('/{service}', [SettingsController::class, 'runtimeServiceStatus'])->name('status');
+            Route::post('/{service}/start', [SettingsController::class, 'startRuntimeService'])->name('start');
+            Route::post('/{service}/stop', [SettingsController::class, 'stopRuntimeService'])->name('stop');
+            Route::post('/{service}/restart', [SettingsController::class, 'restartRuntimeService'])->name('restart');
         });
 
         Route::prefix('settings/print-smb')->name('print-smb.')->group(function () {

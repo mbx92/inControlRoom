@@ -7,6 +7,7 @@ import PageHeader from '@/Components/PageHeader.vue';
 const props = defineProps({
     integration: { type: Object, required: true },
     availableTypes: { type: Object, required: true },
+    nasVendors: { type: Object, default: () => ({}) },
     sites: { type: Array, default: () => [] },
     vaultEntries: { type: Array, default: () => [] },
     inventoryAssets: { type: Array, default: () => [] },
@@ -25,6 +26,7 @@ const form = useForm({
         health_expected_status: props.integration.config?.health_expected_status ?? 200,
         host_asset_id: props.integration.config?.host_asset_id ?? '',
         username: props.integration.config?.username ?? '',
+        vendor: props.integration.config?.vendor ?? 'synology',
     },
     is_active: props.integration.is_active,
 });
@@ -61,9 +63,10 @@ const selectedVaultEntry = computed(() => (
 const isProxmox = computed(() => props.integration.type === 'proxmox');
 const isDocker = computed(() => props.integration.type === 'docker');
 const isNvr = computed(() => props.integration.type === 'nvr');
+const isNas = computed(() => props.integration.type === 'nas');
 const isHeadscale = computed(() => props.integration.type === 'headscale');
 const requiresVaultEntry = computed(() => (
-    isProxmox.value || isNvr.value || isHeadscale.value || form.config.auth_mode === 'bearer'
+    isProxmox.value || isNvr.value || isNas.value || isHeadscale.value || form.config.auth_mode === 'bearer'
 ));
 
 const hostAssetOptions = computed(() => (
@@ -79,11 +82,12 @@ function submit() {
         config: {
             verify_ssl: data.config.verify_ssl,
             auth_mode: data.config.auth_mode,
-            health_path: isDocker.value || isNvr.value ? (isDocker.value ? '/_ping' : '/ISAPI/System/status') : data.config.health_path,
-            health_method: isDocker.value || isNvr.value ? 'GET' : data.config.health_method,
-            health_expected_status: isDocker.value || isNvr.value ? 200 : Number(data.config.health_expected_status || 200),
+            health_path: isDocker.value || isNvr.value || isNas.value ? (isDocker.value ? '/_ping' : (isNvr.value ? '/ISAPI/System/status' : '/')) : data.config.health_path,
+            health_method: isDocker.value || isNvr.value || isNas.value ? 'GET' : data.config.health_method,
+            health_expected_status: isDocker.value || isNvr.value || isNas.value ? 200 : Number(data.config.health_expected_status || 200),
             host_asset_id: data.config.host_asset_id || null,
-            username: isNvr.value ? data.config.username : '',
+            username: isNvr.value || isNas.value ? data.config.username : '',
+            vendor: isNas.value ? data.config.vendor : null,
         },
         is_active: data.is_active,
     })).put(route('integrations.update', props.integration.id));
@@ -173,7 +177,7 @@ function submit() {
                         <p v-if="form.errors.base_url" class="form-error">{{ form.errors.base_url }}</p>
                     </div>
 
-                    <div v-if="isProxmox || isNvr">
+                    <div v-if="isProxmox || isNvr || isNas">
                         <label class="form-label" for="host-asset">Host Machine (Inventory)</label>
                         <select
                             id="host-asset"
@@ -187,13 +191,18 @@ function submit() {
                             </option>
                         </select>
                         <p class="text-body-sm text-muted mt-2">
-                            Link this Proxmox instance to the physical machine it runs on (e.g. Mini PC). Used in topology view.
+                            {{ isProxmox
+                                ? 'Link this Proxmox instance to the physical machine it runs on (e.g. Mini PC). Used in topology view.'
+                                : (isNvr
+                                    ? 'Link this NVR to its physical device record in inventory. Used in topology view.'
+                                    : 'Link this NAS appliance to its inventory record so storage systems stay anchored to real hardware. Used in topology view.') }}
                         </p>
                         <p v-if="form.errors['config.host_asset_id']" class="form-error">{{ form.errors['config.host_asset_id'] }}</p>
                     </div>
 
                     <!-- NVR credentials -->
                     <div v-if="isNvr" class="divider text-caption">NVR Access</div>
+                    <div v-if="isNas" class="divider text-caption">NAS Access</div>
 
                     <div v-if="isNvr">
                         <label class="form-label" for="nvr-username">Camera Username</label>
@@ -212,11 +221,46 @@ function submit() {
                         <p v-if="form.errors['config.username']" class="form-error">{{ form.errors['config.username'] }}</p>
                     </div>
 
-                    <div v-if="!isProxmox && !isNvr && !isHeadscale" class="divider text-caption">{{ isDocker ? 'Docker Access' : 'API Health' }}</div>
+                    <div v-if="isNas" class="grid gap-5 sm:grid-cols-2">
+                        <div>
+                            <label class="form-label" for="nas-vendor">NAS Vendor</label>
+                            <select
+                                id="nas-vendor"
+                                v-model="form.config.vendor"
+                                class="select mt-2 w-full"
+                                :class="{ 'select-error': form.errors['config.vendor'] }"
+                                required
+                            >
+                                <option v-for="(label, key) in nasVendors" :key="key" :value="key">
+                                    {{ label }}
+                                </option>
+                            </select>
+                            <p v-if="form.errors['config.vendor']" class="form-error">{{ form.errors['config.vendor'] }}</p>
+                        </div>
+
+                        <div>
+                            <label class="form-label" for="nas-username">Admin Username</label>
+                            <input
+                                id="nas-username"
+                                v-model="form.config.username"
+                                type="text"
+                                placeholder="admin"
+                                class="input mt-2 w-full"
+                                :class="{ 'input-error': form.errors['config.username'] }"
+                                required
+                            />
+                            <p class="text-body-sm text-muted mt-2">
+                                Rotate passwords from Vault, not from this form.
+                            </p>
+                            <p v-if="form.errors['config.username']" class="form-error">{{ form.errors['config.username'] }}</p>
+                        </div>
+                    </div>
+
+                    <div v-if="!isProxmox && !isNvr && !isNas && !isHeadscale" class="divider text-caption">{{ isDocker ? 'Docker Access' : 'API Health' }}</div>
 
                     <div v-if="isHeadscale" class="divider text-caption">Headscale Access</div>
 
-                    <div v-if="!isProxmox && !isDocker && !isNvr && !isHeadscale" class="grid gap-5 sm:grid-cols-2">
+                    <div v-if="!isProxmox && !isDocker && !isNvr && !isNas && !isHeadscale" class="grid gap-5 sm:grid-cols-2">
                         <div>
                             <label class="form-label" for="health-path">Health Path</label>
                             <input
@@ -280,6 +324,10 @@ function submit() {
                         Headscale memakai Bearer API key yang disimpan di Vault. Endpoint health check terkunci ke <span class="text-body font-mono-num">/api/v1/node</span>.
                     </div>
 
+                    <div v-if="isNas" class="rounded-xl border border-hairline bg-base-300 px-4 py-4 text-body-sm text-muted">
+                        NAS stays as one normalized type. The selected vendor chooses the adapter path so Synology, QNAP, and NETGEAR can grow independently without multiplying integration categories.
+                    </div>
+
                     <div>
                         <label class="form-label" for="integration-vault-entry">{{ isHeadscale ? 'Headscale API Key' : 'Vault Secret' }}</label>
                         <select
@@ -297,6 +345,9 @@ function submit() {
                         <p v-if="isHeadscale" class="text-body-sm text-muted mt-2">
                             Rotasi API key dilakukan dari Vault, bukan di form ini.
                         </p>
+                        <p v-if="isNas" class="text-body-sm text-muted mt-2">
+                            Vault entry should store the NAS password as a generic secret.
+                        </p>
                         <p v-if="form.errors.vault_entry_id" class="form-error">{{ form.errors.vault_entry_id }}</p>
                     </div>
 
@@ -308,7 +359,7 @@ function submit() {
                     <label class="mt-2 flex items-center gap-3 cursor-pointer">
                         <input v-model="form.config.verify_ssl" type="checkbox" class="checkbox checkbox-primary" />
                         <span class="text-body-sm text-muted">
-                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : (isDocker ? 'Verify SSL certificate during Docker API checks' : (isNvr ? 'Verify SSL certificate during NVR API checks' : (isHeadscale ? 'Verify SSL certificate during Headscale API checks' : 'Verify SSL certificate during API health checks'))) }}
+                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : (isDocker ? 'Verify SSL certificate during Docker API checks' : (isNvr ? 'Verify SSL certificate during NVR API checks' : (isNas ? 'Verify SSL certificate during NAS API checks' : (isHeadscale ? 'Verify SSL certificate during Headscale API checks' : 'Verify SSL certificate during API health checks')))) }}
                         </span>
                     </label>
 
@@ -316,10 +367,10 @@ function submit() {
                         <button
                             type="submit"
                             class="btn btn-primary"
-                            :class="{ loading: form.processing }"
                             :disabled="form.processing"
                         >
-                            Save Changes
+                            <span v-if="form.processing" class="loading loading-spinner loading-xs"></span>
+                            {{ form.processing ? 'Saving...' : 'Save Changes' }}
                         </button>
                         <Link :href="route('integrations.index')" class="btn btn-ghost">Cancel</Link>
                         <Link :href="route('vault.create')" class="btn btn-secondary">Add Vault Entry</Link>
@@ -336,11 +387,13 @@ function submit() {
                             ? 'Proxmox integrations read their token from vault, so rotation should happen on the secret entry rather than in this form.'
                             : (isNvr
                                 ? 'NVR integrations use HTTP Digest auth. Username is stored in this form, password comes from the attached vault entry as a generic secret.'
-                                : (isHeadscale
-                                    ? 'Headscale integrations keep the API key in Vault. Change the domain here, but rotate the key at the secret source.'
-                                    : (isDocker
-                                        ? 'Docker integrations assume one host endpoint and keep monitoring read-only. If you use auth in front of Docker, rotate the bearer token in vault.'
-                                        : 'Custom API integrations let you target any service health endpoint, including Node-based apps with bearer token auth.'))) }}
+                                : (isNas
+                                    ? 'NAS integrations keep the password in Vault and the admin username in config. Vendor-specific adapters decide how deep the check goes.'
+                                    : (isHeadscale
+                                        ? 'Headscale integrations keep the API key in Vault. Change the domain here, but rotate the key at the secret source.'
+                                        : (isDocker
+                                            ? 'Docker integrations assume one host endpoint and keep monitoring read-only. If you use auth in front of Docker, rotate the bearer token in vault.'
+                                            : 'Custom API integrations let you target any service health endpoint, including Node-based apps with bearer token auth.')))) }}
                     </p>
 
                     <div v-if="selectedVaultEntry" class="mt-5 rounded-lg border border-hairline bg-base-300 px-4 py-4">

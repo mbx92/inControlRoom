@@ -275,6 +275,7 @@ class InventoryAssetController extends Controller
             'scope_label' => $asset->site?->name ?? 'Unassigned',
             'name' => $asset->name,
             'category' => $asset->category,
+            'category_icon' => $this->categoryIcon($asset->category),
             'status' => $asset->status,
             'status_label' => $asset->status_label,
             'asset_tag' => $asset->asset_tag,
@@ -309,6 +310,28 @@ class InventoryAssetController extends Controller
                 : null,
             'scan_url' => $this->assetScanUrl($asset),
         ];
+    }
+
+    private function categoryIcon(string $category): string
+    {
+        return match (strtolower($category)) {
+            'server' => 'server',
+            'hypervisor' => 'hypervisor',
+            'storage', 'nas' => 'storage',
+            'firewall' => 'firewall',
+            'switch' => 'switch',
+            'router' => 'router',
+            'access point' => 'ap',
+            'printer' => 'printer',
+            'ups' => 'ups',
+            'pc', 'mini pc', 'endpoint' => 'pc',
+            'laptop' => 'laptop',
+            'monitor' => 'monitor',
+            'medical device' => 'medical',
+            'license' => 'license',
+            'spare part' => 'spare',
+            default => 'device',
+        };
     }
 
     private function assetHistory(InventoryAsset $asset, int $limit = 12): array

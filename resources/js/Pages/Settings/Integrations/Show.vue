@@ -19,6 +19,8 @@ const props = defineProps({
     dockerSummary: { type: Object, default: null },
     nvrChannels: { type: Array, default: null },
     nvrSummary: { type: Object, default: null },
+    nasSnapshot: { type: Object, default: null },
+    nasSummary: { type: Object, default: null },
 });
 
 const connectionHealth = computed(() => {
@@ -109,6 +111,24 @@ function activityBadgeClass(result) {
     }
 
     return 'badge-error';
+}
+
+function dockerStateDotClass(container) {
+    const state = String(container?.state ?? '').toLowerCase();
+
+    if (state === 'running') {
+        return 'signal-dot--live';
+    }
+
+    if (['restarting', 'paused', 'created'].includes(state)) {
+        return 'signal-dot--warning';
+    }
+
+    if (['exited', 'dead', 'removing'].includes(state)) {
+        return 'signal-dot--critical';
+    }
+
+    return container?.is_running ? 'signal-dot--live' : 'signal-dot--warning';
 }
 
 function goToPage(pageParam, page) {
@@ -327,6 +347,44 @@ function goToPage(pageParam, page) {
                 </div>
             </section>
 
+            <section
+                v-if="integration.type === 'nas' && nasSummary"
+                class="panel-card p-4 sm:p-5"
+            >
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Vendor</div>
+                        <div class="text-title-sm text-body mt-3">{{ integration.source_summary?.vendor ?? '—' }}</div>
+                        <div class="text-caption text-muted mt-2">selected adapter</div>
+                    </article>
+
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Volumes</div>
+                        <div class="text-number-sm text-body mt-3">{{ nasSummary.volume_total ?? 0 }}</div>
+                        <div class="text-caption text-muted mt-2">normalized storage groups</div>
+                    </article>
+
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Disks</div>
+                        <div class="mt-3 flex items-end gap-2">
+                            <div class="text-number-sm text-body">{{ nasSummary.disk_total ?? 0 }}</div>
+                            <div class="text-caption text-muted">{{ nasSummary.healthy_disk_total ?? 0 }} healthy</div>
+                        </div>
+                        <div class="text-caption text-muted mt-2">{{ nasSummary.degraded_disk_total ?? 0 }} attention</div>
+                    </article>
+
+                    <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
+                        <div class="text-caption text-muted">Storage Footprint</div>
+                        <div class="text-title-sm text-body mt-3">
+                            {{ formatBytes(nasSummary.storage_used_bytes) }}
+                        </div>
+                        <div class="text-caption text-muted mt-2">
+                            of {{ formatBytes(nasSummary.storage_total_bytes) }}
+                        </div>
+                    </article>
+                </div>
+            </section>
+
             <div class="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_360px]">
                 <section class="space-y-6">
                     <section class="panel-card p-6">
@@ -385,6 +443,20 @@ function goToPage(pageParam, page) {
                                 <div class="text-caption text-muted">Management Route</div>
                                 <div class="text-body-sm text-body mt-2 break-all font-mono-num">
                                     /api/v1/node
+                                </div>
+                            </div>
+
+                            <div v-if="integration.type === 'nas'">
+                                <div class="text-caption text-muted">Vendor Adapter</div>
+                                <div class="text-body-sm text-body mt-2">
+                                    {{ integration.config?.vendor ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div v-if="integration.type === 'nas'">
+                                <div class="text-caption text-muted">Authentication</div>
+                                <div class="text-body-sm text-body mt-2">
+                                    Username in config, password via vault
                                 </div>
                             </div>
                         </div>
@@ -617,6 +689,129 @@ function goToPage(pageParam, page) {
                     </section>
 
                     <section
+                        v-if="integration.type === 'nas' && integration.source_summary"
+                        class="panel-card p-6"
+                    >
+                        <div class="eyebrow">Platform Summary</div>
+                        <div class="mt-4 text-title-sm text-body">
+                            {{ integration.source_summary.headline }}
+                        </div>
+
+                        <div class="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Vendor</div>
+                                <div class="text-body-sm text-body mt-2">
+                                    {{ integration.source_summary.vendor ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Volumes</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.volume_count ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Disks</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.disk_count ?? '—' }}
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">SSL</div>
+                                <div class="text-body-sm text-body mt-2">
+                                    {{ integration.source_summary.verify_ssl === false ? 'Disabled' : 'Enabled' }}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section
+                        v-if="integration.type === 'nas' && nasSnapshot && ((nasSnapshot.volumes?.length ?? 0) > 0 || (nasSnapshot.disks?.length ?? 0) > 0)"
+                        class="panel-card p-6"
+                    >
+                        <div class="flex items-center justify-between gap-4">
+                            <div>
+                                <div class="eyebrow">Storage Snapshot</div>
+                                <h2 class="text-title-md text-body mt-2">Current NAS Estate</h2>
+                            </div>
+
+                            <div class="status-chip">
+                                {{ (nasSnapshot.volumes?.length ?? 0) + (nasSnapshot.disks?.length ?? 0) }} records
+                            </div>
+                        </div>
+
+                        <div v-if="(nasSnapshot.volumes?.length ?? 0) > 0" class="mt-6 overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="border-hairline">
+                                        <th>Volume</th>
+                                        <th>Total</th>
+                                        <th>Used</th>
+                                        <th>Free</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="volume in nasSnapshot.volumes"
+                                        :key="volume.id"
+                                        class="border-hairline transition-default hover:bg-elevated/30"
+                                    >
+                                        <td class="text-body-sm text-body">{{ volume.name ?? volume.id }}</td>
+                                        <td class="text-body-sm text-body">{{ formatBytes(volume.total_bytes) }}</td>
+                                        <td class="text-body-sm text-body">{{ formatBytes(volume.used_bytes) }}</td>
+                                        <td class="text-body-sm text-body">{{ formatBytes(volume.free_bytes) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div v-if="(nasSnapshot.disks?.length ?? 0) > 0" class="mt-6 overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="border-hairline">
+                                        <th>Disk</th>
+                                        <th>Health</th>
+                                        <th>Model</th>
+                                        <th>Capacity</th>
+                                        <th>Temp</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="disk in nasSnapshot.disks"
+                                        :key="disk.id"
+                                        class="border-hairline transition-default hover:bg-elevated/30"
+                                    >
+                                        <td>
+                                            <div class="text-body-sm text-body">{{ disk.name }}</div>
+                                            <div class="text-caption text-muted mt-1">
+                                                Slot {{ disk.slot ?? '—' }}<span v-if="disk.serial"> / {{ disk.serial }}</span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="status-chip">
+                                                <span
+                                                    class="signal-dot"
+                                                    :class="disk.health === 'healthy' ? 'signal-dot--live' : 'signal-dot--warning'"
+                                                />
+                                                {{ disk.health ?? 'unknown' }}
+                                            </span>
+                                        </td>
+                                        <td class="text-body-sm text-body">{{ disk.model ?? '—' }}</td>
+                                        <td class="text-body-sm text-body">{{ formatBytes(disk.total_bytes) }}</td>
+                                        <td class="text-body-sm text-body">
+                                            {{ disk.temperature_c ? `${disk.temperature_c}°C` : '—' }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section
                         v-if="integration.type === 'proxmox' && proxmoxGuests"
                         class="panel-card p-6"
                     >
@@ -747,7 +942,7 @@ function goToPage(pageParam, page) {
                                             <span class="status-chip">
                                                 <span
                                                     class="signal-dot"
-                                                    :class="container.is_running ? 'signal-dot--live' : 'signal-dot--warning'"
+                                                    :class="dockerStateDotClass(container)"
                                                 />
                                                 {{ container.state }}
                                             </span>

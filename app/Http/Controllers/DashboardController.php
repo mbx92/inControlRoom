@@ -34,7 +34,8 @@ class DashboardController extends Controller
         $this->applySiteScope($activityQuery);
 
         $integrations = $integrationQuery
-            ->orderBy('name')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('last_tested_at')
             ->get();
 
         $openEvents = $eventQuery->get();
@@ -49,7 +50,7 @@ class DashboardController extends Controller
         ];
 
         $recentActivity = $activityQuery
-            ->limit(10)
+            ->limit(5)
             ->get()
             ->map(fn (AuditLog $log) => [
                 'id' => $log->id,

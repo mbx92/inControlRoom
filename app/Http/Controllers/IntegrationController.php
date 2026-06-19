@@ -9,6 +9,7 @@ use App\Models\Site;
 use App\Models\VaultEntry;
 use App\Services\Alerting\DockerMonitoringService;
 use App\Services\Alerting\IntegrationMonitoringService;
+use App\Services\Alerting\NasMonitoringService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,6 +49,7 @@ class IntegrationController extends Controller
     {
         return Inertia::render('Settings/Integrations/Create', [
             'availableTypes' => Integration::TYPES,
+            'nasVendors' => Integration::NAS_VENDORS,
             'sites' => $this->siteOptions(),
             'vaultEntries' => $this->vaultEntryOptions(),
             'inventoryAssets' => $this->inventoryAssetOptions(),
@@ -224,6 +226,8 @@ class IntegrationController extends Controller
         $nvrChannels = null;
         $nvrSummary = null;
         $nvrMeta = null;
+        $nasSnapshot = null;
+        $nasSummary = null;
         $activityError = null;
         $proxmoxJournal = null;
 
@@ -318,6 +322,20 @@ class IntegrationController extends Controller
             }
         }
 
+        if ($integration->type === 'nas') {
+            try {
+                $nasMonitoring = app(NasMonitoringService::class);
+                $nasSnapshot = $nasMonitoring->capture($integration);
+                $nasSummary = $nasMonitoring->summarize($integration, $nasSnapshot);
+            } catch (\Throwable $e) {
+                $activityError = $this->formatConnectionExceptionForDisplay(
+                    $e,
+                    $integration->base_url,
+                    $integration->config['verify_ssl'] ?? true,
+                );
+            }
+        }
+
         $presentedIntegration = [
             ...$this->presentIntegration($integration),
             'created_at' => $integration->created_at?->toDateTimeString(),
@@ -342,6 +360,19 @@ class IntegrationController extends Controller
             ];
         }
 
+        if ($integration->type === 'nas' && $nasSummary !== null) {
+            $sourceSummary = $presentedIntegration['source_summary'] ?? [];
+            $presentedIntegration['source_summary'] = [
+                ...$sourceSummary,
+                'vendor' => Integration::NAS_VENDORS[$integration->config['vendor'] ?? ''] ?? ($sourceSummary['vendor'] ?? null),
+                'volume_count' => $nasSummary['volume_total'] ?? ($sourceSummary['volume_count'] ?? null),
+                'disk_count' => $nasSummary['disk_total'] ?? ($sourceSummary['disk_count'] ?? null),
+                'storage_total_bytes' => $nasSummary['storage_total_bytes'] ?? ($sourceSummary['storage_total_bytes'] ?? null),
+                'storage_used_bytes' => $nasSummary['storage_used_bytes'] ?? ($sourceSummary['storage_used_bytes'] ?? null),
+                'verify_ssl' => $integration->config['verify_ssl'] ?? ($sourceSummary['verify_ssl'] ?? null),
+            ];
+        }
+
         return Inertia::render('Settings/Integrations/Show', [
             'integration' => $presentedIntegration,
             'activity' => $activity,
@@ -354,6 +385,8 @@ class IntegrationController extends Controller
             'dockerSummary' => $dockerSummary,
             'nvrChannels' => $nvrChannels,
             'nvrSummary' => $nvrSummary,
+            'nasSnapshot' => $nasSnapshot,
+            'nasSummary' => $nasSummary,
         ]);
     }
 
@@ -366,8 +399,10 @@ class IntegrationController extends Controller
             'base_url' => 'required|url|max:500',
             'vault_entry_id' => 'nullable|exists:vault_entries,id',
             'config' => 'nullable|array',
+            'config.verify_ssl' => 'nullable|boolean',
             'config.host_asset_id' => 'nullable|uuid|exists:inventory_assets,id',
             'config.username' => 'nullable|string|max:255',
+            'config.vendor' => 'nullable|string|in:'.implode(',', array_keys(Integration::NAS_VENDORS)),
         ]);
 
         $validated = $this->normalizeIntegrationPayload($validated);
@@ -402,6 +437,7 @@ class IntegrationController extends Controller
         return Inertia::render('Settings/Integrations/Edit', [
             'integration' => $this->presentIntegration($integration->load(['site', 'vaultEntry.site'])),
             'availableTypes' => Integration::TYPES,
+            'nasVendors' => Integration::NAS_VENDORS,
             'sites' => $this->siteOptions(),
             'vaultEntries' => $this->vaultEntryOptions(),
             'inventoryAssets' => $this->inventoryAssetOptions(),
@@ -417,8 +453,10 @@ class IntegrationController extends Controller
             'base_url' => 'required|url|max:500',
             'vault_entry_id' => 'nullable|exists:vault_entries,id',
             'config' => 'nullable|array',
+            'config.verify_ssl' => 'nullable|boolean',
             'config.host_asset_id' => 'nullable|uuid|exists:inventory_assets,id',
             'config.username' => 'nullable|string|max:255',
+            'config.vendor' => 'nullable|string|in:'.implode(',', array_keys(Integration::NAS_VENDORS)),
             'is_active' => 'boolean',
         ]);
 
@@ -621,7 +659,7 @@ class IntegrationController extends Controller
         );
 
         if ($verifySsl && $isIpAddress && $hasCertificateHostnameMismatch) {
-            return "SSL certificate mismatch for {$host}. This server certificate does not include the IP address. Use the Proxmox domain/FQDN instead, or disable SSL verification only if this is an internal lab environment.";
+            return "SSL certificate mismatch for {$host}. This server certificate does not include the IP address. Use the service domain/FQDN instead, or disable SSL verification only if this is an internal lab environment.";
         }
 
         return "Connection failed: {$message}";
@@ -743,6 +781,21 @@ class IntegrationController extends Controller
             ];
         }
 
+        if ($integration->type === 'nas' && ! empty($meta)) {
+            return [
+                'headline' => trim(collect([
+                    $meta['product'] ?? null,
+                    Integration::NAS_VENDORS[$meta['vendor'] ?? ''] ?? null,
+                ])->filter()->implode(' ')),
+                'vendor' => Integration::NAS_VENDORS[$meta['vendor'] ?? ''] ?? ($meta['vendor'] ?? null),
+                'volume_count' => $meta['volume_count'] ?? null,
+                'disk_count' => $meta['disk_count'] ?? null,
+                'storage_total_bytes' => $meta['storage_total_bytes'] ?? null,
+                'storage_used_bytes' => $meta['storage_used_bytes'] ?? null,
+                'verify_ssl' => $meta['verify_ssl'] ?? null,
+            ];
+        }
+
         if ($integration->type !== 'proxmox' || empty($meta)) {
             if ($integration->type !== 'docker' || empty($meta)) {
                 return null;
@@ -788,13 +841,7 @@ class IntegrationController extends Controller
                 'failure' => 'critical',
                 default => 'warning',
             },
-            'endpoint' => $meta['health_endpoint'] ?? ($integration->type === 'proxmox'
-                ? rtrim($integration->base_url, '/').'/api2/json/version'
-                : ($integration->type === 'docker'
-                    ? rtrim($integration->base_url, '/').'/_ping'
-                    : ($integration->type === 'headscale'
-                        ? $this->headscaleApiBase($integration->base_url).'/node'
-                        : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health')))),
+            'endpoint' => $meta['health_endpoint'] ?? $this->defaultHealthEndpoint($integration),
             'reachable' => $meta['api_reachable'] ?? ($status === 'success'),
             'auth_status' => $meta['auth_status'] ?? ($status === 'success' ? 'valid' : 'unknown'),
             'latency_ms' => $meta['latency_ms'] ?? null,
@@ -802,8 +849,8 @@ class IntegrationController extends Controller
             'http_status' => $meta['http_status'] ?? null,
             'checked_at' => $integration->last_tested_at?->toDateTimeString(),
             'verify_ssl' => $meta['verify_ssl'] ?? ($integration->config['verify_ssl'] ?? true),
-            'method' => $meta['health_method'] ?? (in_array($integration->type, ['docker', 'headscale'], true) ? 'GET' : ($integration->config['health_method'] ?? 'GET')),
-            'expected_status' => $meta['expected_status'] ?? (in_array($integration->type, ['docker', 'headscale'], true) ? 200 : ($integration->config['health_expected_status'] ?? 200)),
+            'method' => $meta['health_method'] ?? (in_array($integration->type, ['docker', 'headscale', 'nas'], true) ? 'GET' : ($integration->config['health_method'] ?? 'GET')),
+            'expected_status' => $meta['expected_status'] ?? (in_array($integration->type, ['docker', 'headscale', 'nas'], true) ? 200 : ($integration->config['health_expected_status'] ?? 200)),
         ];
     }
 
@@ -815,13 +862,7 @@ class IntegrationController extends Controller
             'kind' => $integration->type,
             'product' => $integration->type_name,
             'verify_ssl' => $verifySsl,
-            'health_endpoint' => $integration->type === 'proxmox'
-                ? rtrim($integration->base_url, '/').'/api2/json/version'
-                : ($integration->type === 'docker'
-                    ? rtrim($integration->base_url, '/').'/_ping'
-                    : ($integration->type === 'headscale'
-                        ? $this->headscaleApiBase($integration->base_url).'/node'
-                        : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health'))),
+            'health_endpoint' => $this->defaultHealthEndpoint($integration),
             'api_reachable' => false,
             'auth_status' => str_contains($messageLower, 'auth')
                 || str_contains($messageLower, 'token')
@@ -899,6 +940,7 @@ class IntegrationController extends Controller
             'health_expected_status' => (int) ($config['health_expected_status'] ?? 200),
             'host_asset_id' => ! empty($config['host_asset_id']) ? (string) $config['host_asset_id'] : null,
             'username' => trim((string) ($config['username'] ?? '')),
+            'vendor' => ! empty($config['vendor']) ? strtolower((string) $config['vendor']) : null,
         ];
 
         if (($validated['type'] ?? null) === 'headscale') {
@@ -910,6 +952,24 @@ class IntegrationController extends Controller
                 'health_expected_status' => 200,
                 'host_asset_id' => null,
                 'username' => '',
+            ];
+        }
+
+        if (($validated['type'] ?? null) === 'nas') {
+            $vendor = $validated['config']['vendor'] ?? 'synology';
+            $healthPath = match ($vendor) {
+                'synology' => '/webapi/query.cgi?api=SYNO.API.Info&version=1&method=query&query=SYNO.API.Auth',
+                'qnap' => '/cgi-bin/',
+                'netgear' => '/',
+                default => '/',
+            };
+
+            $validated['config'] = [
+                ...$validated['config'],
+                'auth_mode' => 'vendor',
+                'health_path' => $healthPath,
+                'health_method' => 'GET',
+                'health_expected_status' => 200,
             ];
         }
 
@@ -983,6 +1043,24 @@ class IntegrationController extends Controller
             ]);
         }
 
+        if ($type === 'nas' && ! $vaultEntryId) {
+            throw ValidationException::withMessages([
+                'vault_entry_id' => 'NAS integration requires a vault entry with the appliance password.',
+            ]);
+        }
+
+        if ($type === 'nas' && trim((string) ($validated['config']['username'] ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'config.username' => 'NAS integration requires an admin username.',
+            ]);
+        }
+
+        if ($type === 'nas' && trim((string) ($validated['config']['vendor'] ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'config.vendor' => 'NAS integration requires a vendor selection.',
+            ]);
+        }
+
         if ($type === 'headscale' && ! $vaultEntryId) {
             throw ValidationException::withMessages([
                 'vault_entry_id' => 'Headscale integration requires an API key from vault.',
@@ -1018,6 +1096,17 @@ class IntegrationController extends Controller
             : "{$baseUrl}/api/v1";
     }
 
+    private function defaultHealthEndpoint(Integration $integration): string
+    {
+        return match ($integration->type) {
+            'proxmox' => rtrim($integration->base_url, '/').'/api2/json/version',
+            'docker' => rtrim($integration->base_url, '/').'/_ping',
+            'headscale' => $this->headscaleApiBase($integration->base_url).'/node',
+            'nas' => rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/'),
+            default => rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health'),
+        };
+    }
+
     private function assertIntegrationHostAssetPolicy(array $validated): void
     {
         $type = $validated['type'] ?? null;
@@ -1028,9 +1117,9 @@ class IntegrationController extends Controller
             return;
         }
 
-        if ($type !== 'proxmox' && $type !== 'nvr') {
+        if ($type !== 'proxmox' && $type !== 'nvr' && $type !== 'nas') {
             throw ValidationException::withMessages([
-                'config.host_asset_id' => 'Host machine can only be linked for Proxmox and Hikvision NVR integrations.',
+                'config.host_asset_id' => 'Host machine can only be linked for Proxmox, Hikvision NVR, and NAS integrations.',
             ]);
         }
 

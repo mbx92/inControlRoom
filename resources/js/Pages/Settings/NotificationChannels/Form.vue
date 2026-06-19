@@ -103,7 +103,10 @@ function submit() {
         </label>
 
         <div class="flex flex-wrap gap-2">
-            <button type="submit" class="btn btn-primary" :disabled="form.processing">{{ submitLabel }}</button>
+            <button type="submit" class="btn btn-primary" :disabled="form.processing">
+                <span v-if="form.processing" class="loading loading-spinner loading-xs"></span>
+                {{ form.processing ? 'Saving...' : submitLabel }}
+            </button>
         </div>
     </form>
 </template>

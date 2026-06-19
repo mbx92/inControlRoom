@@ -121,9 +121,114 @@
   --noise: 0;
 }
 
+@plugin "daisyui/theme" {
+  name: "infracontrol-light";
+  default: false;
+  prefersdark: false;
+  color-scheme: light;
+
+  --color-base-100: #ffffff;
+  --color-base-200: #eef1f4;
+  --color-base-300: #f3f5f7;
+  --color-base-content: #18212b;
+
+  --color-primary: #c78a00;
+  --color-primary-content: #ffffff;
+
+  --color-secondary: #eef1f4;
+  --color-secondary-content: #18212b;
+
+  --color-accent: #0f8f98;
+  --color-accent-content: #ffffff;
+
+  --color-neutral: #dfe5eb;
+  --color-neutral-content: #18212b;
+
+  --color-info: #2563eb;
+  --color-info-content: #ffffff;
+
+  --color-success: #0f9f63;
+  --color-success-content: #ffffff;
+
+  --color-warning: #c78a00;
+  --color-warning-content: #ffffff;
+
+  --color-error: #dc4057;
+  --color-error-content: #ffffff;
+
+  --radius-selector: 4px;
+  --radius-field: 8px;
+  --radius-box: 12px;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
 :root,
 html[data-app-theme="industrial-ops"] {
   --font-display: "Barlow Semi Condensed", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html[data-app-theme="daylight-ops"] {
+  color-scheme: light;
+  --color-primary: #c78a00;
+  --color-primary-active: #a86f00;
+  --color-primary-disabled: #d8c59a;
+  --color-canvas: #f3f5f7;
+  --color-card: #ffffff;
+  --color-elevated: #eef1f4;
+  --color-ink: #111827;
+  --color-body: #18212b;
+  --color-body-light: #18212b;
+  --color-muted: #607080;
+  --color-muted-strong: #425263;
+  --color-hairline: #d8dee6;
+  --color-hairline-light: #d8dee6;
+  --color-border-strong: #c4ccd6;
+  --color-trading-up: #0f9f63;
+  --color-trading-down: #dc4057;
+  --color-info-accent: #2563eb;
+  --color-accent-turquoise: #0f8f98;
+  --theme-panel-rail-rgb: 199 138 0;
+  --theme-grid-rgb: 190 198 208;
+  --theme-panel-overlay-opacity: 0.2;
+  --theme-shell-grid-opacity: 0.16;
+  --theme-subtle-bg: rgba(255, 255, 255, 0.82);
+  --theme-chip-bg: rgba(255, 255, 255, 0.92);
+  --theme-sidebar-bg: rgba(247, 249, 251, 0.95);
+  --theme-topbar-bg: rgba(243, 245, 247, 0.92);
+  --theme-hover-bg: rgba(230, 235, 240, 0.82);
+  --theme-sidebar-active-border: rgba(199, 138, 0, 0.22);
+  --theme-sidebar-active-bg: rgba(255, 248, 230, 0.98);
+  --theme-panel-shadow: 0 14px 36px rgba(17, 24, 39, 0.06);
+  --theme-brand-radius: 10px;
+  --theme-login-grid: rgba(196, 204, 214, 0.42);
+  --theme-focus-ring: rgba(37, 99, 235, 0.22);
+  --theme-input-bg: rgba(255, 255, 255, 0.96);
+  --theme-signal-live-ring: rgba(15, 159, 99, 0.12);
+  --theme-body-wash:
+    radial-gradient(circle at top left, rgba(199, 138, 0, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.74), transparent 30%);
+
+  --color-base-100: #ffffff;
+  --color-base-200: #eef1f4;
+  --color-base-300: #f3f5f7;
+  --color-base-content: #18212b;
+  --color-primary-content: #ffffff;
+  --color-secondary: #eef1f4;
+  --color-secondary-content: #18212b;
+  --color-accent: #0f8f98;
+  --color-accent-content: #ffffff;
+  --color-neutral: #dfe5eb;
+  --color-neutral-content: #18212b;
+  --color-info: #2563eb;
+  --color-info-content: #ffffff;
+  --color-success: #0f9f63;
+  --color-success-content: #ffffff;
+  --color-warning: #c78a00;
+  --color-warning-content: #ffffff;
+  --color-error: #dc4057;
+  --color-error-content: #ffffff;
 }
 
 html[data-app-theme="premium-terminal"] {
@@ -751,11 +856,44 @@ optgroup {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 100%;
+  overflow: hidden;
   font-family: var(--font-display);
   font-size: 14px;
   font-weight: 700;
   text-transform: none;
   box-shadow: none;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.btn.loading {
+  position: relative;
+}
+
+.btn.loading::before {
+  flex: 0 0 auto;
+}
+
+.btn .loading,
+.btn .loading-spinner,
+.btn .loading-xs,
+.btn .loading-sm,
+.btn .loading-md,
+.btn .loading-lg {
+  flex: 0 0 auto;
+}
+
+.runtime-action-btn {
+  min-width: 148px;
+}
+
+.runtime-action-btn .loading {
+  margin: 0;
 }
 
 .btn-primary {
@@ -890,6 +1028,10 @@ optgroup {
 
 .theme-switcher__swatch--industrial-ops {
   background: linear-gradient(135deg, #fcd535, #a67800);
+}
+
+.theme-switcher__swatch--daylight-ops {
+  background: linear-gradient(135deg, #fff4cf, #c78a00);
 }
 
 .theme-switcher__swatch--premium-terminal {

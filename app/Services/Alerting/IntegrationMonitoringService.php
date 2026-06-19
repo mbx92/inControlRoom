@@ -11,6 +11,7 @@ class IntegrationMonitoringService
         private readonly ProxmoxMetricSnapshotService $metricSnapshotService,
         private readonly DockerMonitoringService $dockerMonitoringService,
         private readonly NvrMonitoringService $nvrMonitoringService,
+        private readonly NasMonitoringService $nasMonitoringService,
         private readonly AlertEvaluator $alertEvaluator,
     ) {
     }
@@ -55,6 +56,15 @@ class IntegrationMonitoringService
             try {
                 $channels = $this->nvrMonitoringService->capture($integration);
                 $guestCount = count($channels);
+            } catch (\Throwable $e) {
+                $metricError = $e->getMessage();
+            }
+        }
+
+        if ($collectMetrics && $integration->type === 'nas' && $result['success']) {
+            try {
+                $snapshot = $this->nasMonitoringService->capture($integration);
+                $guestCount = count($snapshot['volumes'] ?? []) + count($snapshot['disks'] ?? []);
             } catch (\Throwable $e) {
                 $metricError = $e->getMessage();
             }

@@ -50,6 +50,10 @@ function clearFilters() {
     filterForm.status = '';
     applyFilters();
 }
+
+function openEntry(entryId) {
+    router.get(route('vault.show', entryId));
+}
 </script>
 
 <template>
@@ -141,56 +145,69 @@ function clearFilters() {
                 </Link>
             </div>
 
-            <div v-else class="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <article
-                    v-for="entry in entries"
-                    :key="entry.id"
-                    class="panel-card p-5 transition-default hover:border-primary/30"
-                >
-                    <div class="flex items-start justify-between gap-4">
-                        <div class="min-w-0">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <p class="eyebrow">{{ entry.kind_label }}</p>
-                                <span class="status-chip">{{ entry.scope_kind === 'global' ? 'Global' : entry.scope_label }}</span>
-                            </div>
-                            <h2 class="text-title-sm text-body mt-3">{{ entry.name }}</h2>
-                            <p class="text-body-sm text-muted mt-2">{{ entry.masked_preview }}</p>
-                        </div>
-
-                        <span class="status-chip shrink-0">
-                            <span
-                                class="signal-dot"
-                                :class="entry.is_active ? 'signal-dot--live' : 'signal-dot--warning'"
-                            />
-                            {{ entry.is_active ? 'Active' : 'Archived' }}
-                        </span>
-                    </div>
-
-                    <div class="mt-5 grid grid-cols-2 gap-3 border-t border-hairline pt-4">
-                        <div>
-                            <div class="text-caption text-muted">Used By</div>
-                            <div class="text-body-sm text-body mt-1">{{ entry.integrations_count }} integrations</div>
-                        </div>
-                        <div>
-                            <div class="text-caption text-muted">Last Rotated</div>
-                            <div class="text-body-sm text-body mt-1">{{ entry.last_rotated_human ?? 'Not tracked' }}</div>
-                        </div>
-                    </div>
-
-                    <div v-if="entry.notes" class="mt-4 text-body-sm text-muted line-clamp-2">
-                        {{ entry.notes }}
-                    </div>
-
-                    <div class="mt-5 flex flex-wrap gap-2">
-                        <Link :href="route('vault.show', entry.id)" class="btn btn-primary btn-sm">
-                            Details
-                        </Link>
-                        <Link v-if="isAdmin" :href="route('vault.edit', entry.id)" class="btn btn-ghost btn-sm">
-                            Edit
-                        </Link>
-                    </div>
-                </article>
-            </div>
+            <section v-else class="panel-card table-shell">
+                <div class="overflow-x-auto">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Scope</th>
+                                <th>Kind</th>
+                                <th>Status</th>
+                                <th>Used By</th>
+                                <th>Last Rotated</th>
+                                <th>Preview</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="entry in entries"
+                                :key="entry.id"
+                                tabindex="0"
+                                class="cursor-pointer transition-default hover:bg-elevated/30 focus:bg-elevated/30"
+                                @click="openEntry(entry.id)"
+                                @keydown.enter="openEntry(entry.id)"
+                                @keydown.space.prevent="openEntry(entry.id)"
+                            >
+                                <td>
+                                    <div class="text-body-sm text-body font-semibold">{{ entry.name }}</div>
+                                    <div v-if="entry.notes" class="text-caption text-muted mt-1 line-clamp-1">
+                                        {{ entry.notes }}
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="status-chip">
+                                        {{ entry.scope_kind === 'global' ? 'Global' : entry.scope_label }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="text-body-sm text-body">{{ entry.kind_label }}</div>
+                                </td>
+                                <td>
+                                    <span class="status-chip">
+                                        <span
+                                            class="signal-dot"
+                                            :class="entry.is_active ? 'signal-dot--live' : 'signal-dot--warning'"
+                                        />
+                                        {{ entry.is_active ? 'Active' : 'Archived' }}
+                                    </span>
+                                </td>
+                                <td class="text-body-sm text-body">
+                                    {{ entry.integrations_count }} integrations
+                                </td>
+                                <td class="text-body-sm text-body">
+                                    {{ entry.last_rotated_human ?? 'Not tracked' }}
+                                </td>
+                                <td>
+                                    <div class="text-body-sm text-muted max-w-md truncate">
+                                        {{ entry.masked_preview }}
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
         </div>
     </AppLayout>
 </template>

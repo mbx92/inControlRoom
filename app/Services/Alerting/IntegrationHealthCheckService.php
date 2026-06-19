@@ -12,6 +12,7 @@ class IntegrationHealthCheckService
         private readonly IntegrationCredentialsResolver $credentialsResolver,
         private readonly DockerMonitoringService $dockerMonitoringService,
         private readonly NvrMonitoringService $nvrMonitoringService,
+        private readonly NasMonitoringService $nasMonitoringService,
     ) {
     }
 
@@ -26,6 +27,7 @@ class IntegrationHealthCheckService
                 'proxmox' => $this->testProxmox($integration->base_url, $credentials, $verifySsl),
                 'docker' => $this->dockerMonitoringService->check($integration),
                 'nvr' => $this->nvrMonitoringService->check($integration),
+                'nas' => $this->nasMonitoringService->check($integration),
                 'headscale' => $this->testHeadscale($integration->base_url, $credentials, $verifySsl),
                 'custom_api' => $this->testCustomApi($integration->base_url, $credentials, $config),
                 default => [
@@ -243,7 +245,7 @@ class IntegrationHealthCheckService
         );
 
         if ($verifySsl && $isIpAddress && $hasCertificateHostnameMismatch) {
-            return "SSL certificate mismatch for {$host}. This server certificate does not include the IP address. Use the Proxmox domain/FQDN instead, or disable SSL verification only if this is an internal lab environment.";
+            return "SSL certificate mismatch for {$host}. This server certificate does not include the IP address. Use the service domain/FQDN instead, or disable SSL verification only if this is an internal lab environment.";
         }
 
         return "Connection failed: {$message}";
@@ -283,9 +285,11 @@ class IntegrationHealthCheckService
                 ? rtrim($integration->base_url, '/').'/api2/json/version'
                 : ($integration->type === 'docker'
                     ? rtrim($integration->base_url, '/').'/_ping'
+                    : ($integration->type === 'nas'
+                        ? rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/')
                     : ($integration->type === 'headscale'
                         ? $this->headscaleApiBase($integration->base_url).'/node'
-                        : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health'))),
+                        : rtrim($integration->base_url, '/').($integration->config['health_path'] ?? '/health')))),
             'api_reachable' => false,
             'auth_status' => str_contains($messageLower, 'auth')
                 || str_contains($messageLower, 'token')
@@ -294,10 +298,10 @@ class IntegrationHealthCheckService
                 ? 'failed'
                 : 'unknown',
             'latency_ms' => null,
-            'health_method' => in_array($integration->type, ['docker', 'headscale'], true)
+            'health_method' => in_array($integration->type, ['docker', 'headscale', 'nas'], true)
                 ? 'GET'
                 : ($integration->config['health_method'] ?? 'GET'),
-            'expected_status' => in_array($integration->type, ['docker', 'headscale'], true)
+            'expected_status' => in_array($integration->type, ['docker', 'headscale', 'nas'], true)
                 ? 200
                 : ($integration->config['health_expected_status'] ?? 200),
         ];

@@ -186,10 +186,10 @@ function submit() {
                         <button
                             type="submit"
                             class="btn btn-primary"
-                            :class="{ loading: form.processing }"
                             :disabled="form.processing"
                         >
-                            Create Vault Entry
+                            <span v-if="form.processing" class="loading loading-spinner loading-xs"></span>
+                            {{ form.processing ? 'Saving...' : 'Create Vault Entry' }}
                         </button>
                         <Link :href="route('vault.index')" class="btn btn-ghost">Cancel</Link>
                     </div>

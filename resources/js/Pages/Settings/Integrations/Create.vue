@@ -6,6 +6,7 @@ import PageHeader from '@/Components/PageHeader.vue';
 
 const props = defineProps({
     availableTypes: { type: Object, required: true },
+    nasVendors: { type: Object, default: () => ({}) },
     sites: { type: Array, default: () => [] },
     vaultEntries: { type: Array, default: () => [] },
     inventoryAssets: { type: Array, default: () => [] },
@@ -25,6 +26,7 @@ const form = useForm({
         health_expected_status: 200,
         host_asset_id: '',
         username: '',
+        vendor: 'synology',
     },
 });
 
@@ -35,14 +37,119 @@ const selectedVaultEntry = computed(() => (
 const isProxmox = computed(() => form.type === 'proxmox');
 const isDocker = computed(() => form.type === 'docker');
 const isNvr = computed(() => form.type === 'nvr');
+const isNas = computed(() => form.type === 'nas');
 const isHeadscale = computed(() => form.type === 'headscale');
 const requiresVaultEntry = computed(() => (
-    isProxmox.value || isNvr.value || isHeadscale.value || form.config.auth_mode === 'bearer'
+    isProxmox.value || isNvr.value || isNas.value || isHeadscale.value || form.config.auth_mode === 'bearer'
 ));
 
 const hostAssetOptions = computed(() => (
     props.inventoryAssets.filter((asset) => asset.site_id === form.site_id)
 ));
+
+const hostAssetHint = computed(() => {
+    if (isProxmox.value) {
+        return 'Link this Proxmox instance to the physical machine it runs on (e.g. Mini PC). Used in topology view.';
+    }
+
+    if (isNvr.value) {
+        return 'Link this NVR to its physical device record in inventory. Used in topology view.';
+    }
+
+    return 'Link this NAS appliance to its inventory record so storage systems show up cleanly in topology and asset views.';
+});
+
+const vaultHint = computed(() => {
+    if (isProxmox.value) {
+        return 'Proxmox always requires a vault entry containing its API token.';
+    }
+
+    if (isNvr.value) {
+        return 'Hikvision NVR requires a vault entry containing the camera password (stored as generic secret).';
+    }
+
+    if (isNas.value) {
+        return 'NAS integrations require a vault entry containing the appliance password. Generic Secret is sufficient.';
+    }
+
+    if (isHeadscale.value) {
+        return 'Headscale requires a vault entry containing the API key. The key is not entered directly here so it stays encrypted.';
+    }
+
+    if (isDocker.value) {
+        return 'Optional for open Docker endpoints. Required only when your proxy expects a bearer token.';
+    }
+
+    return 'Optional for open health endpoints. Required only when auth mode uses a bearer token.';
+});
+
+const sslHint = computed(() => {
+    if (isProxmox.value) {
+        return 'Verify SSL certificate during Proxmox API checks';
+    }
+
+    if (isDocker.value) {
+        return 'Verify SSL certificate during Docker API checks';
+    }
+
+    if (isNvr.value) {
+        return 'Verify SSL certificate during NVR API checks';
+    }
+
+    if (isNas.value) {
+        return 'Verify SSL certificate during NAS API checks';
+    }
+
+    if (isHeadscale.value) {
+        return 'Verify SSL certificate during Headscale API checks';
+    }
+
+    return 'Verify SSL certificate during API health checks';
+});
+
+const provisioningNote = computed(() => {
+    if (isProxmox.value) {
+        return 'Choose a vault-backed API token and InfraControl will use it for inventory plus API health checks.';
+    }
+
+    if (isNvr.value) {
+        return 'Enter the camera username and attach a vault entry with the password. InfraControl will use Hikvision ISAPI for health checks, channel inventory, and recording status.';
+    }
+
+    if (isNas.value) {
+        return 'Choose the NAS vendor, store the password in Vault, and keep the appliance under one normalized NAS type so future storage metrics do not fragment the integration model.';
+    }
+
+    if (isHeadscale.value) {
+        return 'Use the Headscale base domain and attach a vault entry that contains the API key. InfraControl validates the control server through its REST API.';
+    }
+
+    if (isDocker.value) {
+        return 'Use Docker for a single host endpoint when the main need is container health, runtime inventory, and basic CPU/memory telemetry.';
+    }
+
+    return 'Use Custom API for Node services or other internal systems where the main need is endpoint reachability and authentication health.';
+});
+
+const healthStrategyHint = computed(() => {
+    if (isDocker.value) {
+        return 'Point this integration to a read-only Docker API or proxy endpoint. The built-in health probe always targets /_ping.';
+    }
+
+    if (isNvr.value) {
+        return 'Point this integration to your Hikvision NVR IP address (e.g., http://192.168.1.64). Health probe uses /ISAPI/System/status.';
+    }
+
+    if (isNas.value) {
+        return 'Point this integration to the NAS admin URL. Synology uses DSM WebAPI discovery; QNAP and NETGEAR currently start with a safe reachability probe.';
+    }
+
+    if (isHeadscale.value) {
+        return 'Point this integration to your Headscale domain. InfraControl appends /api/v1/node and sends the vault-backed API key as Bearer auth.';
+    }
+
+    return 'Point health checks to a stable endpoint such as /health or /api/health.';
+});
 
 const pageTitle = computed(() => (
     isProxmox.value
@@ -51,7 +158,9 @@ const pageTitle = computed(() => (
             ? 'Add Docker Host'
             : (isNvr.value
                 ? 'Add Hikvision NVR'
-                : (isHeadscale.value ? 'Add Headscale' : 'Add Custom API')))
+                : (isNas.value
+                    ? 'Add NAS Appliance'
+                    : (isHeadscale.value ? 'Add Headscale' : 'Add Custom API'))))
 ));
 
 const pageSubtitle = computed(() => (
@@ -61,9 +170,11 @@ const pageSubtitle = computed(() => (
             ? 'Register a Docker Engine endpoint for read-only health checks, container inventory, and lightweight runtime metrics.'
             : (isNvr.value
                 ? 'Register a Hikvision NVR endpoint to monitor camera channels, recording status, and generate RTSP stream links.'
-                : (isHeadscale.value
-                    ? 'Register a Headscale control server with its domain and API key so operators can validate reachability from the control room.'
-                    : 'Register any API-based system, define its health endpoint, and optionally attach a bearer token from vault.')))
+                : (isNas.value
+                    ? 'Register a NAS appliance and pick its vendor adapter so InfraControl can evolve from simple reachability checks to storage-aware monitoring.'
+                    : (isHeadscale.value
+                        ? 'Register a Headscale control server with its domain and API key so operators can validate reachability from the control room.'
+                        : 'Register any API-based system, define its health endpoint, and optionally attach a bearer token from vault.'))))
 ));
 
 function submit() {
@@ -74,11 +185,12 @@ function submit() {
         config: {
             verify_ssl: data.config.verify_ssl,
             auth_mode: data.config.auth_mode,
-            health_path: isDocker.value || isNvr.value ? (isDocker.value ? '/_ping' : '/ISAPI/System/status') : data.config.health_path,
-            health_method: isDocker.value || isNvr.value ? 'GET' : data.config.health_method,
-            health_expected_status: isDocker.value || isNvr.value ? 200 : Number(data.config.health_expected_status || 200),
+            health_path: isDocker.value || isNvr.value || isNas.value ? (isDocker.value ? '/_ping' : (isNvr.value ? '/ISAPI/System/status' : '/')) : data.config.health_path,
+            health_method: isDocker.value || isNvr.value || isNas.value ? 'GET' : data.config.health_method,
+            health_expected_status: isDocker.value || isNvr.value || isNas.value ? 200 : Number(data.config.health_expected_status || 200),
             host_asset_id: data.config.host_asset_id || null,
-            username: isNvr.value ? data.config.username : '',
+            username: isNvr.value || isNas.value ? data.config.username : '',
+            vendor: isNas.value ? data.config.vendor : null,
         },
     })).post(route('integrations.store'));
 }
@@ -124,7 +236,7 @@ function submit() {
                             id="integration-name"
                             v-model="form.name"
                             type="text"
-                            :placeholder="isProxmox ? 'Production Proxmox' : (isDocker ? 'Docker Host Production' : (isNvr ? 'NVR Lobby Utama' : (isHeadscale ? 'Headscale Primary' : 'Node API Production')))"
+                            :placeholder="isProxmox ? 'Production Proxmox' : (isDocker ? 'Docker Host Production' : (isNvr ? 'NVR Lobby Utama' : (isNas ? 'NAS File Core' : (isHeadscale ? 'Headscale Primary' : 'Node API Production'))))"
                             class="input mt-2 w-full"
                             :class="{ 'input-error': form.errors.name }"
                             required
@@ -157,7 +269,7 @@ function submit() {
                             id="integration-base-url"
                             v-model="form.base_url"
                             type="url"
-                            :placeholder="isProxmox ? 'https://proxmox.example.com:8006' : (isDocker ? 'https://docker.example.com:2376' : (isNvr ? 'http://192.168.1.64' : (isHeadscale ? 'https://headscale.example.com' : 'https://api.example.com')))"
+                            :placeholder="isProxmox ? 'https://proxmox.example.com:8006' : (isDocker ? 'https://docker.example.com:2376' : (isNvr ? 'http://192.168.1.64' : (isNas ? 'https://nas.example.com:5001' : (isHeadscale ? 'https://headscale.example.com' : 'https://api.example.com'))))"
                             class="input mt-2 w-full font-mono-num"
                             :class="{ 'input-error': form.errors.base_url }"
                             required
@@ -168,7 +280,7 @@ function submit() {
                         <p v-if="form.errors.base_url" class="form-error">{{ form.errors.base_url }}</p>
                     </div>
 
-                    <div v-if="isProxmox || isNvr">
+                    <div v-if="isProxmox || isNvr || isNas">
                         <label class="form-label" for="host-asset">Host Machine (Inventory)</label>
                         <select
                             id="host-asset"
@@ -182,13 +294,14 @@ function submit() {
                             </option>
                         </select>
                         <p class="text-body-sm text-muted mt-2">
-                            {{ isProxmox ? 'Link this Proxmox instance to the physical machine it runs on (e.g. Mini PC). Used in topology view.' : 'Link this NVR to its physical device record in inventory. Used in topology view.' }}
+                            {{ hostAssetHint }}
                         </p>
                         <p v-if="form.errors['config.host_asset_id']" class="form-error">{{ form.errors['config.host_asset_id'] }}</p>
                     </div>
 
                     <!-- NVR credentials -->
                     <div v-if="isNvr" class="divider text-caption">NVR Access</div>
+                    <div v-if="isNas" class="divider text-caption">NAS Access</div>
 
                     <div v-if="isNvr">
                         <label class="form-label" for="nvr-username">Camera Username</label>
@@ -207,11 +320,46 @@ function submit() {
                         <p v-if="form.errors['config.username']" class="form-error">{{ form.errors['config.username'] }}</p>
                     </div>
 
-                    <div v-if="!isProxmox && !isNvr && !isHeadscale" class="divider text-caption">{{ isDocker ? 'Docker Access' : 'API Health' }}</div>
+                    <div v-if="isNas" class="grid gap-5 sm:grid-cols-2">
+                        <div>
+                            <label class="form-label" for="nas-vendor">NAS Vendor</label>
+                            <select
+                                id="nas-vendor"
+                                v-model="form.config.vendor"
+                                class="select mt-2 w-full"
+                                :class="{ 'select-error': form.errors['config.vendor'] }"
+                                required
+                            >
+                                <option v-for="(label, key) in nasVendors" :key="key" :value="key">
+                                    {{ label }}
+                                </option>
+                            </select>
+                            <p v-if="form.errors['config.vendor']" class="form-error">{{ form.errors['config.vendor'] }}</p>
+                        </div>
+
+                        <div>
+                            <label class="form-label" for="nas-username">Admin Username</label>
+                            <input
+                                id="nas-username"
+                                v-model="form.config.username"
+                                type="text"
+                                placeholder="admin"
+                                class="input mt-2 w-full"
+                                :class="{ 'input-error': form.errors['config.username'] }"
+                                required
+                            />
+                            <p class="text-body-sm text-muted mt-2">
+                                Store the NAS password in Vault. Username stays in config so vendor adapters can authenticate later.
+                            </p>
+                            <p v-if="form.errors['config.username']" class="form-error">{{ form.errors['config.username'] }}</p>
+                        </div>
+                    </div>
+
+                    <div v-if="!isProxmox && !isNvr && !isNas && !isHeadscale" class="divider text-caption">{{ isDocker ? 'Docker Access' : 'API Health' }}</div>
 
                     <div v-if="isHeadscale" class="divider text-caption">Headscale Access</div>
 
-                    <div v-if="!isProxmox && !isDocker && !isNvr && !isHeadscale" class="grid gap-5 sm:grid-cols-2">
+                    <div v-if="!isProxmox && !isDocker && !isNvr && !isNas && !isHeadscale" class="grid gap-5 sm:grid-cols-2">
                         <div>
                             <label class="form-label" for="health-path">Health Path</label>
                             <input
@@ -276,6 +424,10 @@ function submit() {
                         Headscale memakai Bearer API key. Simpan key di Vault lalu pilih di field bawah. Health check default mengarah ke <span class="text-body font-mono-num">/api/v1/node</span>.
                     </div>
 
+                    <div v-if="isNas" class="rounded-xl border border-hairline bg-base-300 px-4 py-4 text-body-sm text-muted">
+                        NAS adapters are vendor-scoped. Synology uses DSM WebAPI discovery and login; QNAP and NETGEAR start with reachability checks so deeper storage telemetry can be added vendor by vendor without changing the integration type.
+                    </div>
+
                     <div>
                         <label class="form-label" for="integration-vault-entry">{{ isHeadscale ? 'Headscale API Key' : 'Vault Secret' }}</label>
                         <select
@@ -291,15 +443,7 @@ function submit() {
                             </option>
                         </select>
                         <p class="text-body-sm text-muted mt-2">
-                            {{ isProxmox
-                                ? 'Proxmox always requires a vault entry containing its API token.'
-                                : (isNvr
-                                    ? 'Hikvision NVR requires a vault entry containing the camera password (stored as generic secret).'
-                                    : (isHeadscale
-                                        ? 'Headscale requires a vault entry containing the API key. The key is not entered directly here so it stays encrypted.'
-                                        : (isDocker
-                                            ? 'Optional for open Docker endpoints. Required only when your proxy expects a bearer token.'
-                                            : 'Optional for open health endpoints. Required only when auth mode uses a bearer token.'))) }}
+                            {{ vaultHint }}
                         </p>
                         <p v-if="form.errors.vault_entry_id" class="form-error">{{ form.errors.vault_entry_id }}</p>
                     </div>
@@ -307,7 +451,7 @@ function submit() {
                     <label class="mt-2 flex items-center gap-3 cursor-pointer">
                         <input v-model="form.config.verify_ssl" type="checkbox" class="checkbox checkbox-primary" />
                         <span class="text-body-sm text-muted">
-                            {{ isProxmox ? 'Verify SSL certificate during Proxmox API checks' : (isDocker ? 'Verify SSL certificate during Docker API checks' : (isNvr ? 'Verify SSL certificate during NVR API checks' : (isHeadscale ? 'Verify SSL certificate during Headscale API checks' : 'Verify SSL certificate during API health checks'))) }}
+                            {{ sslHint }}
                         </span>
                     </label>
 
@@ -315,10 +459,10 @@ function submit() {
                         <button
                             type="submit"
                             class="btn btn-primary"
-                            :class="{ loading: form.processing }"
                             :disabled="form.processing"
                         >
-                            Create Integration
+                            <span v-if="form.processing" class="loading loading-spinner loading-xs"></span>
+                            {{ form.processing ? 'Saving...' : 'Create Integration' }}
                         </button>
                         <Link :href="route('integrations.index')" class="btn btn-ghost">Cancel</Link>
                         <Link :href="route('vault.create')" class="btn btn-secondary">Add Vault Entry</Link>
@@ -331,15 +475,7 @@ function submit() {
                     <div class="eyebrow">Provisioning Notes</div>
                     <div class="mt-4 text-title-sm text-body">{{ availableTypes[form.type] }}</div>
                     <p class="text-body-sm text-muted mt-3">
-                        {{ isProxmox
-                            ? 'Choose a vault-backed API token and InfraControl will use it for inventory plus API health checks.'
-                            : (isNvr
-                                ? 'Enter the camera username and attach a vault entry with the password. InfraControl will use Hikvision ISAPI for health checks, channel inventory, and recording status.'
-                                : (isHeadscale
-                                    ? 'Use the Headscale base domain and attach a vault entry that contains the API key. InfraControl validates the control server through its REST API.'
-                                    : (isDocker
-                                        ? 'Use Docker for a single host endpoint when the main need is container health, runtime inventory, and basic CPU/memory telemetry.'
-                                        : 'Use Custom API for Node services or other internal systems where the main need is endpoint reachability and authentication health.'))) }}
+                        {{ provisioningNote }}
                     </p>
 
                     <div v-if="selectedVaultEntry" class="mt-5 rounded-lg border border-hairline bg-base-300 px-4 py-4">
@@ -355,13 +491,7 @@ function submit() {
                             <div>
                                 <div class="text-caption text-muted">Health Strategy</div>
                                 <p class="text-body-sm text-muted mt-2">
-                                    {{ isDocker
-                                        ? 'Point this integration to a read-only Docker API or proxy endpoint. The built-in health probe always targets /_ping.'
-                                        : (isNvr
-                                            ? 'Point this integration to your Hikvision NVR IP address (e.g., http://192.168.1.64). Health probe uses /ISAPI/System/status.'
-                                            : (isHeadscale
-                                                ? 'Point this integration to your Headscale domain. InfraControl appends /api/v1/node and sends the vault-backed API key as Bearer auth.'
-                                                : 'Point health checks to a stable endpoint such as /health or /api/health.')) }}
+                                    {{ healthStrategyHint }}
                                 </p>
                             </div>
                         </div>

@@ -227,10 +227,10 @@ function submit() {
                     <button
                         type="submit"
                         class="btn btn-primary"
-                        :class="{ loading: form.processing }"
                         :disabled="form.processing"
                     >
-                        {{ isEdit ? 'Save Changes' : 'Add Printer' }}
+                        <span v-if="form.processing" class="loading loading-spinner loading-xs"></span>
+                        {{ form.processing ? 'Saving...' : (isEdit ? 'Save Changes' : 'Add Printer') }}
                     </button>
                     <Link :href="route('print-smb.index')" class="btn btn-ghost">
                         Cancel

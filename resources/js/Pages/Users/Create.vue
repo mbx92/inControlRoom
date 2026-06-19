@@ -149,10 +149,10 @@ const isScopeRelevant = computed(() => form.role === 'operator' || form.role ===
                     <button
                         type="submit"
                         class="btn btn-primary"
-                        :class="{ loading: form.processing }"
                         :disabled="form.processing"
                     >
-                        Create User
+                        <span v-if="form.processing" class="loading loading-spinner loading-xs"></span>
+                        {{ form.processing ? 'Saving...' : 'Create User' }}
                     </button>
                     <Link :href="route('users.index')" class="btn btn-ghost">
                         Cancel

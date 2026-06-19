@@ -38,6 +38,8 @@ const criticalShare = computed(() => (
         : 0
 ));
 
+const connectedSystemsPreview = computed(() => props.integrations.slice(0, 3));
+
 function healthLabel(integration) {
     if (integration.last_test_status === 'success') {
         return 'Healthy';
@@ -150,9 +152,14 @@ function healthDotClass(integration) {
 
                 <aside class="space-y-6">
                     <section class="panel-card overflow-hidden">
-                        <div class="border-b border-hairline px-5 py-4">
-                            <div class="eyebrow">Source Health</div>
-                            <h2 class="text-title-md text-body mt-2">Connected Systems</h2>
+                        <div class="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
+                            <div>
+                                <div class="eyebrow">Source Health</div>
+                                <h2 class="text-title-md text-body mt-2">Connected Systems</h2>
+                            </div>
+                            <Link :href="route('integrations.index')" class="btn btn-secondary btn-sm">
+                                View Integrations
+                            </Link>
                         </div>
 
                         <div v-if="integrations.length === 0" class="px-5 py-8 text-body-sm text-muted">
@@ -161,7 +168,7 @@ function healthDotClass(integration) {
 
                         <ul v-else class="divide-y divide-[var(--color-hairline)]">
                             <li
-                                v-for="integration in integrations"
+                                v-for="integration in connectedSystemsPreview"
                                 :key="integration.id"
                                 class="px-5 py-4"
                             >

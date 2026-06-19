@@ -116,10 +116,10 @@ function submit() {
                         <button
                             type="submit"
                             class="btn btn-primary"
-                            :class="{ loading: form.processing }"
                             :disabled="form.processing"
                         >
-                            Create Site
+                            <span v-if="form.processing" class="loading loading-spinner loading-xs"></span>
+                            {{ form.processing ? 'Saving...' : 'Create Site' }}
                         </button>
                         <Link :href="route('sites.index')" class="btn btn-ghost">Cancel</Link>
                     </div>

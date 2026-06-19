@@ -58,6 +58,10 @@ return [
 
     'ssh_terminal_proxy_port' => (int) env('SSH_TERMINAL_PROXY_PORT', 8078),
 
+    'vnc_proxy_url' => env('VNC_PROXY_URL'),
+
+    'vnc_proxy_port' => (int) env('VNC_PROXY_PORT', 8079),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

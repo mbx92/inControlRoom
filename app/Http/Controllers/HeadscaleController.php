@@ -437,6 +437,25 @@ class HeadscaleController extends Controller
         ]);
     }
 
+    public function vncPage(Request $request, Integration $integration): Response
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+        abort_unless($request->user()?->canExecute(), 403);
+
+        $integration->load(['site', 'vaultEntry.site']);
+
+        return Inertia::render('Headscale/Vnc', [
+            'integration' => $this->presentIntegration($integration),
+            'vncVaultEntries' => $this->vncVaultEntryOptions($integration->site_id),
+            'initialTarget' => [
+                'name' => (string) $request->query('node_name', ''),
+                'host' => (string) $request->query('host', ''),
+                'port' => (int) $request->integer('port', 5900),
+            ],
+        ]);
+    }
+
     public function createTerminalSession(Request $request, Integration $integration): JsonResponse
     {
         abort_unless($integration->type === 'headscale', 404);
@@ -495,11 +514,76 @@ class HeadscaleController extends Controller
         ]);
     }
 
+    public function createVncSession(Request $request, Integration $integration): JsonResponse
+    {
+        abort_unless($integration->type === 'headscale', 404);
+        $this->authorizeSiteAccess($integration->site_id);
+
+        $validated = $request->validate([
+            'host' => ['required', 'string', 'max:255'],
+            'node_name' => ['nullable', 'string', 'max:255'],
+            'port' => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'vault_entry_id' => ['required', 'uuid', 'exists:vault_entries,id'],
+            'view_only' => ['nullable', 'boolean'],
+        ]);
+
+        $vaultEntry = VaultEntry::query()->findOrFail($validated['vault_entry_id']);
+        $this->assertVaultEntryUsableForScope($vaultEntry, $integration->site_id);
+
+        $password = $this->resolveVncPassword($vaultEntry);
+        $proxyToken = (string) Str::uuid();
+
+        Cache::put($this->vncProxyCacheKey($proxyToken), [
+            'host' => $validated['host'],
+            'port' => (int) ($validated['port'] ?? 5900),
+            'password' => $password,
+            'node_name' => $validated['node_name'] ?? $validated['host'],
+            'view_only' => (bool) ($validated['view_only'] ?? false),
+        ], now()->addMinutes(5));
+
+        AuditLog::record(
+            userId: $request->user()->id,
+            action: 'headscale.vnc.create',
+            targetType: 'integration',
+            targetId: $integration->id,
+            payload: [
+                'host' => $validated['host'],
+                'node_name' => $validated['node_name'] ?? null,
+                'port' => (int) ($validated['port'] ?? 5900),
+                'vault_entry_id' => $vaultEntry->id,
+                'view_only' => (bool) ($validated['view_only'] ?? false),
+            ],
+            ipAddress: $request->ip(),
+            siteId: $integration->site_id,
+        );
+
+        return response()->json([
+            'console_type' => 'novnc',
+            'proxy_resolve_url' => URL::temporarySignedRoute(
+                'headscale.vnc.proxy-payload',
+                now()->addMinutes(5),
+                ['token' => $proxyToken],
+            ),
+            'proxy_websocket_url' => $this->vncProxyWebsocketUrl(),
+        ]);
+    }
+
     public function terminalProxyPayload(Request $request, string $token): JsonResponse
     {
         abort_unless($request->hasValidSignature(), 403);
 
         $payload = Cache::get($this->terminalProxyCacheKey($token));
+
+        abort_unless(is_array($payload), 404);
+
+        return response()->json($payload);
+    }
+
+    public function vncProxyPayload(Request $request, string $token): JsonResponse
+    {
+        abort_unless($request->hasValidSignature(), 403);
+
+        $payload = Cache::get($this->vncProxyCacheKey($token));
 
         abort_unless(is_array($payload), 404);
 
@@ -842,6 +926,31 @@ class HeadscaleController extends Controller
             ->all();
     }
 
+    private function vncVaultEntryOptions(?string $siteId): array
+    {
+        return VaultEntry::query()
+            ->with('site')
+            ->where('is_active', true)
+            ->whereIn('kind', ['service_password', 'generic_secret'])
+            ->where(function ($query) use ($siteId) {
+                $query->whereNull('site_id');
+
+                if ($siteId !== null) {
+                    $query->orWhere('site_id', $siteId);
+                }
+            })
+            ->orderBy('name')
+            ->get()
+            ->map(fn (VaultEntry $entry) => [
+                'id' => $entry->id,
+                'name' => $entry->name,
+                'kind' => $entry->kind,
+                'kind_label' => $entry->kind_label,
+                'scope_label' => $entry->site?->name ?? 'Global',
+            ])
+            ->all();
+    }
+
     private function resolveTerminalCredentials(VaultEntry $vaultEntry, string $authType): array
     {
         $secret = $vaultEntry->revealSecret();
@@ -875,6 +984,22 @@ class HeadscaleController extends Controller
         ];
     }
 
+    private function resolveVncPassword(VaultEntry $vaultEntry): string
+    {
+        $secret = $vaultEntry->revealSecret();
+        $decoded = json_decode(trim($secret), true);
+        $payload = is_array($decoded) ? $decoded : [];
+        $password = trim((string) ($payload['password'] ?? $payload['secret'] ?? $secret));
+
+        if ($password === '') {
+            throw ValidationException::withMessages([
+                'vault_entry_id' => 'Selected vault entry does not contain a usable VNC password.',
+            ]);
+        }
+
+        return $password;
+    }
+
     private function assertVaultEntryUsableForScope(VaultEntry $vaultEntry, ?string $siteId): void
     {
         if (! $vaultEntry->is_active) {
@@ -895,6 +1020,11 @@ class HeadscaleController extends Controller
         return "headscale-terminal-proxy:{$token}";
     }
 
+    private function vncProxyCacheKey(string $token): string
+    {
+        return "headscale-vnc-proxy:{$token}";
+    }
+
     private function sshTerminalProxyWebsocketUrl(): string
     {
         $configured = config('app.ssh_terminal_proxy_url');
@@ -910,5 +1040,22 @@ class HeadscaleController extends Controller
         $port = config('app.ssh_terminal_proxy_port', 8078);
 
         return "{$scheme}://{$host}:{$port}/terminal";
+    }
+
+    private function vncProxyWebsocketUrl(): string
+    {
+        $configured = config('app.vnc_proxy_url');
+
+        if (is_string($configured) && trim($configured) !== '') {
+            return trim($configured);
+        }
+
+        $appUrl = config('app.url', 'http://127.0.0.1:8000');
+        $parts = parse_url($appUrl) ?: [];
+        $scheme = ($parts['scheme'] ?? 'http') === 'https' ? 'wss' : 'ws';
+        $host = $parts['host'] ?? '127.0.0.1';
+        $port = config('app.vnc_proxy_port', 8079);
+
+        return "{$scheme}://{$host}:{$port}/vnc";
     }
 }

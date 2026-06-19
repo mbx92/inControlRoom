@@ -47,8 +47,15 @@ class Integration extends Model
         'proxmox' => 'Proxmox VE',
         'docker' => 'Docker Engine',
         'nvr' => 'Hikvision NVR',
+        'nas' => 'NAS Appliance',
         'headscale' => 'Headscale Control Server',
         'custom_api' => 'Custom API',
+    ];
+
+    public const NAS_VENDORS = [
+        'synology' => 'Synology DSM',
+        'qnap' => 'QNAP QTS',
+        'netgear' => 'NETGEAR ReadyNAS',
     ];
 
     public function metrics(): HasMany

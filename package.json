@@ -6,6 +6,7 @@
         "build": "vite build",
         "console-proxy": "node scripts/proxmox-console-proxy.mjs",
         "ssh-terminal-proxy": "node scripts/ssh-terminal-proxy.mjs",
+        "vnc-proxy": "node scripts/vnc-proxy.mjs",
         "dev": "vite",
         "dev:lan": "VITE_DEV_LAN=1 vite --host 0.0.0.0 --port 5173",
         "serve:lan": "php artisan serve --host=0.0.0.0 --port=8000",

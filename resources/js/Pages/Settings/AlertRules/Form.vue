@@ -96,6 +96,9 @@ function submit() {
             <span class="text-body-sm text-body">Rule is active</span>
         </label>
 
-        <button type="submit" class="btn btn-primary" :disabled="form.processing">{{ submitLabel }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="form.processing">
+            <span v-if="form.processing" class="loading loading-spinner loading-xs"></span>
+            {{ form.processing ? 'Saving...' : submitLabel }}
+        </button>
     </form>
 </template>

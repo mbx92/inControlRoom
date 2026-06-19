@@ -1801,7 +1801,7 @@ onUnmounted(() => {
                             <template v-if="!canEditLayout">Read-only layout.</template>
                             <template v-else-if="isLocked">Nodes locked — unlock to rearrange.</template>
                             <template v-else-if="selectionMode">Shift + drag to select.</template>
-                            <template v-else-if="mode === 'docker'">Site â†’ Docker host â†’ containers.</template>
+                            <template v-else-if="mode === 'docker'">Site -> Docker host -> containers.</template>
                             <template v-else-if="mode === 'nvr'">Site → NVR → cameras.</template>
                             <template v-else-if="mode === 'network'">Site → Floor → room → devices.</template>
                             <template v-else-if="mode === 'proxmox'">Site → Proxmox → VM/CT.</template>

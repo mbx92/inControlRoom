@@ -2,8 +2,20 @@ import { ref } from 'vue';
 
 const STORAGE_KEY = 'infracontrol-theme';
 const DEFAULT_THEME = 'industrial-ops';
+const daisyThemeByAppTheme = {
+    'daylight-ops': 'infracontrol-light',
+    'industrial-ops': 'infracontrol',
+    'premium-terminal': 'infracontrol',
+    'tactical-monitoring': 'infracontrol',
+};
 
 export const themeOptions = [
+    {
+        id: 'daylight-ops',
+        name: 'Daylight Ops',
+        shortName: 'Daylight',
+        description: 'Light control-room mode with brighter surfaces and softer contrast for daytime work.',
+    },
     {
         id: 'industrial-ops',
         name: 'Industrial Ops',
@@ -49,6 +61,7 @@ function applyTheme(themeId) {
 
     if (typeof document !== 'undefined') {
         document.documentElement.dataset.appTheme = nextTheme;
+        document.documentElement.dataset.theme = daisyThemeByAppTheme[nextTheme] ?? 'infracontrol';
     }
 
     if (typeof window !== 'undefined') {
@@ -56,7 +69,7 @@ function applyTheme(themeId) {
     }
 }
 
-if (typeof document !== 'undefined') {
+export function initializeTheme() {
     applyTheme(currentTheme.value);
 }
 
