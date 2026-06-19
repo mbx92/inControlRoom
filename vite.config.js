@@ -21,6 +21,7 @@ function getLanIp() {
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
     const lanMode = env.VITE_DEV_LAN === '1' || env.VITE_DEV_LAN === 'true';
+    const buildSourcemap = env.VITE_BUILD_SOURCEMAP === '1' || env.VITE_BUILD_SOURCEMAP === 'true';
     const lanIp = env.VITE_DEV_LAN_IP || getLanIp();
     const devHost = lanMode ? '0.0.0.0' : '127.0.0.1';
     const devOrigin = lanMode ? `http://${lanIp}:${vitePort}` : undefined;
@@ -97,6 +98,9 @@ export default defineConfig(({ mode }) => {
             watch: {
                 ignored: ['**/storage/framework/views/**'],
             },
+        },
+        build: {
+            sourcemap: buildSourcemap,
         },
     };
 });

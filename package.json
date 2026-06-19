@@ -4,6 +4,7 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
+        "build:sourcemaps": "VITE_BUILD_SOURCEMAP=true vite build",
         "console-proxy": "node scripts/proxmox-console-proxy.mjs",
         "ssh-terminal-proxy": "node scripts/ssh-terminal-proxy.mjs",
         "vnc-proxy": "node scripts/vnc-proxy.mjs",
@@ -11,7 +12,9 @@
         "dev:lan": "VITE_DEV_LAN=1 vite --host 0.0.0.0 --port 5173",
         "serve:lan": "php artisan serve --host=0.0.0.0 --port=8000",
         "dev:all": "concurrently -k -n laravel,vite -c blue,magenta \"php artisan serve --host=127.0.0.1 --port=8000\" \"vite\"",
-        "dev:all:lan": "concurrently -k -n laravel,vite -c blue,magenta \"php artisan serve --host=0.0.0.0 --port=8000\" \"npm run dev:lan\""
+        "dev:all:lan": "concurrently -k -n laravel,vite -c blue,magenta \"php artisan serve --host=0.0.0.0 --port=8000\" \"npm run dev:lan\"",
+        "glitchtip:sourcemaps:upload": "sh ./scripts/upload-glitchtip-sourcemaps.sh",
+        "glitchtip:sourcemaps:build-upload": "npm run build:sourcemaps && npm run glitchtip:sourcemaps:upload"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",
@@ -23,6 +26,7 @@
     "dependencies": {
         "@inertiajs/vue3": "^3.3.1",
         "@novnc/novnc": "^1.7.0",
+        "@sentry/vue": "^10.58.0",
         "@vitejs/plugin-vue": "^6.0.7",
         "@vue-flow/background": "^1.3.2",
         "@vue-flow/controls": "^1.1.3",

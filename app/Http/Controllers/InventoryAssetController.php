@@ -2,13 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\InventoryAssetImportTemplateExport;
+use App\Http\Controllers\Concerns\AppliesSiteScope;
+use App\Imports\InventoryAssetImportRowsImport;
 use App\Jobs\ProcessInventoryLabelPrintJob;
-use App\Models\AuditLog;
 use App\Models\AssetLink;
+use App\Models\AuditLog;
 use App\Models\InventoryAsset;
 use App\Models\InventoryLabelPrintJob;
 use App\Models\LabelPrinter;
 use App\Models\Site;
+use App\Services\Inventory\InventoryAssetImportService;
+use App\Services\LabelPrinting\InventoryLabelPrintService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
@@ -16,10 +22,13 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class InventoryAssetController extends Controller
 {
-    use \App\Http\Controllers\Concerns\AppliesSiteScope;
+    use AppliesSiteScope;
+
     public function index(Request $request): Response
     {
         $query = InventoryAsset::query()
@@ -65,6 +74,35 @@ class InventoryAssetController extends Controller
             'statusOptions' => $this->statusOptions(),
             'filters' => $request->only(['search', 'site', 'status']),
         ]);
+    }
+
+    public function import(Request $request, InventoryAssetImportService $importService): RedirectResponse
+    {
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:10240'],
+        ]);
+
+        $rows = Excel::toCollection(new InventoryAssetImportRowsImport, $validated['file'])->first() ?? collect();
+        $report = $importService->import($rows, $request->user(), $request->ip());
+
+        $message = "Import selesai: {$report['created']} asset dibuat, {$report['updated']} diperbarui, {$report['failed']} gagal.";
+
+        return redirect()
+            ->route('settings.index')
+            ->with($report['created'] > 0 || $report['updated'] > 0 ? 'success' : 'error', $message)
+            ->with('inventory_import_report', $report);
+    }
+
+    public function importTemplate(): BinaryFileResponse
+    {
+        return Excel::download(
+            new InventoryAssetImportTemplateExport(
+                $this->siteOptions(),
+                InventoryAsset::STATUSES,
+                InventoryAsset::CATEGORY_SUGGESTIONS,
+            ),
+            'inventory-asset-import-template.xlsx',
+        );
     }
 
     public function show(InventoryAsset $asset): Response
@@ -183,7 +221,7 @@ class InventoryAssetController extends Controller
                 ->with('error', 'No enabled label printer is configured yet. Set one up in Settings → Label Printers.');
         }
 
-        $job = app(\App\Services\LabelPrinting\InventoryLabelPrintService::class)
+        $job = app(InventoryLabelPrintService::class)
             ->queueAssetLabel($asset->loadMissing('site'), $printer, $request->user());
 
         $processedImmediately = $this->dispatchLabelPrintJob($job);

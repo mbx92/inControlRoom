@@ -53,6 +53,12 @@ const allNavItems = [
         icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10',
     },
     {
+        name: 'Asset Monitoring',
+        route: 'asset-monitoring.index',
+        description: 'Cached online and offline reachability for inventory IP assets',
+        icon: 'M5 12h2l2-5 4 10 2-5h4',
+    },
+    {
         name: 'Audit Log',
         route: 'audit-logs.index',
         description: 'Immutable evidence of every operator action',
@@ -149,6 +155,13 @@ const routeMeta = computed(() => {
         };
     }
 
+    if (current.startsWith('asset-monitoring.')) {
+        return {
+            section: 'Asset Monitoring',
+            detail: 'Cached reachability, recent last-seen status, and targeted IP checks',
+        };
+    }
+
     if (current.startsWith('settings.')) {
         return {
             section: 'Settings Grid',
@@ -205,6 +218,14 @@ function isActive(itemRoute) {
             || current.startsWith('settings.')
             || current.startsWith('notification-channels.')
             || current.startsWith('alert-rules.');
+    }
+
+    if (itemRoute === 'inventory.index') {
+        return current.startsWith('inventory.');
+    }
+
+    if (itemRoute === 'asset-monitoring.index') {
+        return current.startsWith('asset-monitoring.');
     }
 
     const prefix = itemRoute.split('.')[0];

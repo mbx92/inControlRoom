@@ -58,6 +58,10 @@ return [
 
     'ssh_terminal_proxy_port' => (int) env('SSH_TERMINAL_PROXY_PORT', 8078),
 
+    'ssh_terminal_proxy_health_url' => env('SSH_TERMINAL_PROXY_HEALTH_URL'),
+
+    'ssh_terminal_proxy_managed_externally' => (bool) env('SSH_TERMINAL_PROXY_MANAGED_EXTERNALLY', false),
+
     'vnc_proxy_url' => env('VNC_PROXY_URL'),
 
     'vnc_proxy_port' => (int) env('VNC_PROXY_PORT', 8079),

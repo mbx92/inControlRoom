@@ -6,6 +6,7 @@ use App\Models\InventoryAsset;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class InventoryAssetFlowTest extends TestCase
@@ -244,6 +245,121 @@ class InventoryAssetFlowTest extends TestCase
         $this->actingAs($user)
             ->get(route('inventory.show', $asset))
             ->assertForbidden();
+    }
+
+    public function test_admin_can_import_inventory_assets_from_spreadsheet(): void
+    {
+        $admin = $this->createAdminUser();
+        $site = Site::create([
+            'name' => 'Main Hospital',
+            'code' => 'MKS-01',
+            'business_type' => 'Hospital',
+            'timezone' => 'Asia/Makassar',
+            'is_active' => true,
+        ]);
+
+        $existing = InventoryAsset::create([
+            'site_id' => $site->id,
+            'name' => 'Old Switch',
+            'category' => 'Switch',
+            'status' => 'planned',
+            'asset_tag' => 'INV-SW-001',
+        ]);
+
+        $csv = implode("\n", [
+            'site_code,site_name,name,category,status,asset_tag,serial_number,manufacturer,model,primary_ip,location_label,owner_name,acquired_at,warranty_expires_at,custom_fields,notes',
+            'MKS-01,Main Hospital,Core Switch ICU,Switch,active,INV-SW-001,SER-001,Cisco,Catalyst 9300,10.10.10.2,"Lantai 1 / ICU",Infra Team,2026-01-15,2029-01-15,"rack_unit: 12 | maintenance_window: Minggu 01:00","Updated lewat import"',
+            'MKS-01,Main Hospital,UPS Front Office,UPS,standby,,UPS-2026-44,APC,Smart-UPS 2200,,"Lantai 1 / Front Office",General Affairs,,,\"capacity_va: 2200\",\"Asset baru dari import\"',
+        ]);
+
+        $file = UploadedFile::fake()->createWithContent('inventory-import.csv', $csv);
+
+        $this->actingAs($admin)
+            ->post(route('inventory.import'), [
+                'file' => $file,
+            ])
+            ->assertRedirect(route('settings.index'));
+
+        $existing->refresh();
+
+        $this->assertSame('Core Switch ICU', $existing->name);
+        $this->assertSame('active', $existing->status);
+        $this->assertSame([
+            'rack_unit' => '12',
+            'maintenance_window' => 'Minggu 01:00',
+        ], $existing->custom_fields);
+
+        $this->assertDatabaseHas('inventory_assets', [
+            'site_id' => $site->id,
+            'name' => 'UPS Front Office',
+            'category' => 'UPS',
+            'status' => 'standby',
+            'serial_number' => 'UPS-2026-44',
+        ]);
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'inventory_asset.import_update',
+            'target_id' => $existing->id,
+            'user_id' => $admin->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'inventory_asset.import_create',
+            'user_id' => $admin->id,
+        ]);
+    }
+
+    public function test_import_reports_invalid_rows_without_creating_assets(): void
+    {
+        $admin = $this->createAdminUser();
+
+        $csv = implode("\n", [
+            'site_code,site_name,name,category,status,asset_tag',
+            'UNKNOWN,,Broken Asset,Switch,invalid-status,INV-ERR-001',
+        ]);
+
+        $file = UploadedFile::fake()->createWithContent('inventory-invalid.csv', $csv);
+
+        $response = $this->actingAs($admin)
+            ->post(route('inventory.import'), [
+                'file' => $file,
+            ]);
+
+        $response->assertRedirect(route('settings.index'));
+        $response->assertSessionHas('inventory_import_report');
+
+        $report = $response->getSession()->get('inventory_import_report');
+
+        $this->assertSame(1, $report['total_rows']);
+        $this->assertSame(0, $report['created']);
+        $this->assertSame(0, $report['updated']);
+        $this->assertSame(1, $report['failed']);
+        $this->assertNotEmpty($report['errors']);
+        $this->assertDatabaseMissing('inventory_assets', [
+            'asset_tag' => 'INV-ERR-001',
+        ]);
+    }
+
+    public function test_admin_can_download_inventory_import_template(): void
+    {
+        $admin = $this->createAdminUser();
+
+        $response = $this->actingAs($admin)->get(route('inventory.import-template'));
+
+        $response->assertOk();
+        $response->assertHeader(
+            'content-type',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+        $response->assertHeader(
+            'content-disposition',
+            'attachment; filename=inventory-asset-import-template.xlsx',
+        );
+
+        $content = $response->streamedContent();
+
+        $this->assertNotEmpty($content);
+        $this->assertStringStartsWith('PK', $content);
     }
 
     private function createAdminUser(): User

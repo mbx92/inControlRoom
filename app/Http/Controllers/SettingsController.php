@@ -4,10 +4,13 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Sentry\State\HubInterface;
 use Symfony\Component\Process\Process;
 
 class SettingsController extends Controller
@@ -18,7 +21,56 @@ class SettingsController extends Controller
             'runtimeServices' => [
                 'ssh_terminal_proxy' => $this->getRuntimeServiceStatus('ssh-terminal-proxy'),
             ],
+            'inventoryImportReport' => request()->session()->get('inventory_import_report'),
+            'glitchtip' => [
+                'enabled' => filled(config('sentry.dsn')),
+                'backend_environment' => config('sentry.environment'),
+                'frontend_enabled' => (bool) env('VITE_SENTRY_ENABLED', false),
+                'frontend_environment' => env('VITE_SENTRY_ENVIRONMENT', env('APP_ENV')),
+                'release' => config('sentry.release'),
+                'security_endpoint' => config('glitchtip.security_endpoint'),
+                'csp_report_only' => (bool) config('glitchtip.csp_report_only', true),
+            ],
         ]);
+    }
+
+    public function sendGlitchtipTestEvent(HubInterface $hub): RedirectResponse
+    {
+        abort_unless(request()->user()?->isAdmin(), 403);
+
+        if (! filled(config('sentry.dsn'))) {
+            return back()->with('error', 'GlitchTip DSN belum dikonfigurasi, jadi test event tidak dikirim.');
+        }
+
+        $message = 'InfraControl backend test event triggered at '.now()->toIso8601String();
+        $eventId = $hub->captureMessage($message);
+
+        return back()->with(
+            'success',
+            $eventId
+                ? "GlitchTip backend test event sent. Event ID: {$eventId}"
+                : 'GlitchTip backend test event was attempted, but no event ID was returned.',
+        );
+    }
+
+    public function glitchtipCspTestPage(): HttpResponse|RedirectResponse
+    {
+        abort_unless(request()->user()?->isAdmin(), 403);
+
+        $endpoint = trim((string) config('glitchtip.security_endpoint', ''));
+
+        if ($endpoint === '') {
+            return redirect()
+                ->route('settings.index')
+                ->with('error', 'GlitchTip security endpoint belum dikonfigurasi, jadi CSP test belum bisa dijalankan.');
+        }
+
+        return response()
+            ->view('glitchtip-csp-test', [
+                'securityEndpoint' => $endpoint,
+                'policy' => $this->glitchtipCspTestPolicy($endpoint),
+            ])
+            ->header('Content-Security-Policy-Report-Only', $this->glitchtipCspTestPolicy($endpoint));
     }
 
     public function runtimeServiceStatus(string $service): JsonResponse
@@ -39,6 +91,10 @@ class SettingsController extends Controller
     {
         abort_unless($service === 'ssh-terminal-proxy', 404);
         abort_unless(request()->user()?->isAdmin(), 403);
+
+        if ($response = $this->managedRuntimeServiceResponse($service)) {
+            return $response;
+        }
 
         try {
             $status = $this->getRuntimeServiceStatus($service);
@@ -69,6 +125,10 @@ class SettingsController extends Controller
         abort_unless($service === 'ssh-terminal-proxy', 404);
         abort_unless(request()->user()?->isAdmin(), 403);
 
+        if ($response = $this->managedRuntimeServiceResponse($service)) {
+            return $response;
+        }
+
         try {
             $pid = $this->readRuntimeServicePid($service) ?? $this->findRuntimeServicePid($service);
 
@@ -93,6 +153,10 @@ class SettingsController extends Controller
     {
         abort_unless($service === 'ssh-terminal-proxy', 404);
         abort_unless(request()->user()?->isAdmin(), 403);
+
+        if ($response = $this->managedRuntimeServiceResponse($service)) {
+            return $response;
+        }
 
         try {
             $pid = $this->readRuntimeServicePid($service) ?? $this->findRuntimeServicePid($service);
@@ -120,14 +184,17 @@ class SettingsController extends Controller
     private function getRuntimeServiceStatus(string $service): array
     {
         $healthUrl = $this->runtimeServiceHealthUrl($service);
+        $managedExternally = $this->runtimeServiceManagedExternally($service);
         $healthy = false;
-        $message = 'Service is not responding.';
+        $message = $managedExternally
+            ? 'External runtime service is not responding.'
+            : 'Service is not responding.';
 
         try {
             $response = Http::timeout(2)->get($healthUrl);
             $healthy = $response->successful() && ($response->json('ok') === true);
             $message = $healthy
-                ? 'Service is healthy.'
+                ? ($managedExternally ? 'Service is healthy and managed by your deployment platform.' : 'Service is healthy.')
                 : "Health check returned HTTP {$response->status()}.";
         } catch (ConnectionException) {
             $healthy = false;
@@ -142,12 +209,28 @@ class SettingsController extends Controller
             'healthy' => $healthy,
             'message' => $message,
             'health_url' => $healthUrl,
-            'pid' => $this->readRuntimeServicePid($service),
+            'pid' => $managedExternally ? null : $this->readRuntimeServicePid($service),
+            'managed_externally' => $managedExternally,
+            'supports_process_control' => ! $managedExternally,
         ];
+    }
+
+    private function glitchtipCspTestPolicy(string $endpoint): string
+    {
+        return "default-src 'self'; img-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; report-uri {$endpoint};";
     }
 
     private function runtimeServiceHealthUrl(string $service): string
     {
+        $configured = match ($service) {
+            'ssh-terminal-proxy' => config('app.ssh_terminal_proxy_health_url'),
+            default => null,
+        };
+
+        if (is_string($configured) && trim($configured) !== '') {
+            return trim($configured);
+        }
+
         $appUrl = config('app.url', 'http://127.0.0.1:8000');
         $parts = parse_url($appUrl) ?: [];
         $scheme = ($parts['scheme'] ?? 'http') === 'https' ? 'https' : 'http';
@@ -157,6 +240,26 @@ class SettingsController extends Controller
             'ssh-terminal-proxy' => "{$scheme}://{$host}:".config('app.ssh_terminal_proxy_port', 8078).'/healthz',
             default => abort(404),
         };
+    }
+
+    private function runtimeServiceManagedExternally(string $service): bool
+    {
+        return match ($service) {
+            'ssh-terminal-proxy' => (bool) config('app.ssh_terminal_proxy_managed_externally', false),
+            default => false,
+        };
+    }
+
+    private function managedRuntimeServiceResponse(string $service): ?JsonResponse
+    {
+        if (! $this->runtimeServiceManagedExternally($service)) {
+            return null;
+        }
+
+        return response()->json([
+            'message' => 'SSH terminal proxy is managed by your deployment platform. Use Coolify service controls instead.',
+            'service' => $this->getRuntimeServiceStatus($service),
+        ], 409);
     }
 
     private function spawnRuntimeService(string $service): ?int

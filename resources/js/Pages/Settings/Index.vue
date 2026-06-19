@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 import { usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PageHeader from '@/Components/PageHeader.vue';
@@ -10,17 +10,32 @@ const page = usePage();
 const isAdmin = computed(() => page.props.auth.permissions?.is_admin ?? false);
 const props = defineProps({
     runtimeServices: { type: Object, default: () => ({}) },
+    inventoryImportReport: { type: Object, default: null },
+    glitchtip: { type: Object, default: () => ({}) },
 });
 
 const proxyService = ref(props.runtimeServices.ssh_terminal_proxy ?? null);
+const proxyServiceManagedExternally = computed(() => Boolean(proxyService.value?.managed_externally));
 const runtimeBusyAction = ref('');
 const runtimeFlash = ref('');
 const runtimeError = ref('');
+const glitchtipForm = useForm({});
+const importForm = useForm({
+    file: null,
+});
+const importErrorPreview = computed(() => (props.inventoryImportReport?.errors ?? []).slice(0, 6));
 const proxyActions = [
     { id: 'start', label: 'Start Proxy', buttonClass: 'btn-primary' },
     { id: 'restart', label: 'Restart Proxy', buttonClass: 'btn-secondary' },
     { id: 'stop', label: 'Stop Proxy', buttonClass: 'btn-ghost' },
     { id: 'refresh', label: 'Refresh Status', buttonClass: 'btn-ghost' },
+];
+const glitchtipDeploymentChecklist = [
+    'Isi DSN backend dan frontend production di environment server.',
+    'Set SENTRY_RELEASE ke build atau commit yang sedang dirilis.',
+    'Aktifkan source map build lalu upload dengan auth token GlitchTip.',
+    'Pastikan security endpoint CSP bisa diakses browser production.',
+    'Kirim backend test event, frontend test error, dan CSP test setelah deploy.',
 ];
 
 function readCookie(name) {
@@ -112,6 +127,33 @@ async function controlProxy(action) {
         runtimeBusyAction.value = '';
     }
 }
+
+function handleImportFileChange(event) {
+    importForm.file = event.target.files?.[0] ?? null;
+}
+
+function submitImport() {
+    importForm.post(route('inventory.import'), {
+        forceFormData: true,
+        preserveScroll: true,
+        onSuccess: () => {
+            importForm.reset();
+            importForm.clearErrors();
+        },
+    });
+}
+
+function sendBackendTestEvent() {
+    glitchtipForm.post(route('settings.glitchtip.test'), {
+        preserveScroll: true,
+    });
+}
+
+function triggerFrontendTestError() {
+    window.setTimeout(() => {
+        throw new Error(`InfraControl frontend test error at ${new Date().toISOString()}`);
+    }, 0);
+}
 </script>
 
 <template>
@@ -157,10 +199,205 @@ async function controlProxy(action) {
             <hr class="border-border" />
 
             <section v-if="isAdmin">
+                <div class="eyebrow">Observability</div>
+                <h2 class="text-title-lg text-body mt-3">GlitchTip</h2>
+                <p class="text-body-sm text-muted mt-2 mb-6">
+                    Error tracking backend Laravel, frontend Vue, dan CSP reporting sekarang diarahkan ke GlitchTip.
+                </p>
+
+                <div class="panel-card p-5 space-y-5">
+                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                            <div class="text-caption text-muted">Backend SDK</div>
+                            <div class="mt-2 text-body-sm text-body">{{ glitchtip.enabled ? 'Enabled' : 'Disabled' }}</div>
+                        </div>
+                        <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                            <div class="text-caption text-muted">Frontend SDK</div>
+                            <div class="mt-2 text-body-sm text-body">{{ glitchtip.frontend_enabled ? 'Enabled' : 'Disabled' }}</div>
+                        </div>
+                        <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                            <div class="text-caption text-muted">Environment</div>
+                            <div class="mt-2 text-body-sm text-body">{{ glitchtip.backend_environment ?? '-' }}</div>
+                        </div>
+                        <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                            <div class="text-caption text-muted">CSP Mode</div>
+                            <div class="mt-2 text-body-sm text-body">{{ glitchtip.csp_report_only ? 'Report Only' : 'Enforced' }}</div>
+                        </div>
+                    </div>
+
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                            <div class="text-caption text-muted">Security Endpoint</div>
+                            <div class="mt-2 break-all text-body-sm text-body font-mono-num">{{ glitchtip.security_endpoint ?? '-' }}</div>
+                        </div>
+                        <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                            <div class="text-caption text-muted">Release</div>
+                            <div class="mt-2 text-body-sm text-body font-mono-num">{{ glitchtip.release ?? 'Not set' }}</div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap gap-3">
+                        <button
+                            type="button"
+                            class="btn btn-primary"
+                            :disabled="glitchtipForm.processing || !glitchtip.enabled"
+                            @click="sendBackendTestEvent"
+                        >
+                            {{ glitchtipForm.processing ? 'Sending...' : 'Send Backend Test Event' }}
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary"
+                            :disabled="!glitchtip.frontend_enabled"
+                            @click="triggerFrontendTestError"
+                        >
+                            Throw Frontend Test Error
+                        </button>
+                        <a
+                            :href="route('settings.glitchtip.csp-test')"
+                            class="btn btn-ghost"
+                            target="_blank"
+                            rel="noreferrer"
+                            :aria-disabled="!glitchtip.security_endpoint"
+                            :class="{ 'pointer-events-none opacity-50': !glitchtip.security_endpoint }"
+                        >
+                            Open CSP Report Test
+                        </a>
+                    </div>
+
+                    <div class="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+                        <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                            <div class="text-caption text-muted">Deploy Checklist</div>
+                            <ul class="mt-3 space-y-2 text-body-sm text-body">
+                                <li
+                                    v-for="item in glitchtipDeploymentChecklist"
+                                    :key="item"
+                                    class="flex items-start gap-2"
+                                >
+                                    <span class="mt-1 h-2 w-2 rounded-full bg-primary" />
+                                    <span>{{ item }}</span>
+                                </li>
+                            </ul>
+                            <p class="mt-4 text-body-sm text-muted">
+                                Detail langkah deploy ada di <code>docs/glitchtip-deployment-checklist.md</code>.
+                            </p>
+                        </div>
+
+                        <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                            <div class="text-caption text-muted">Source Map Commands</div>
+                            <div class="mt-3 space-y-2 font-mono-num text-body-sm text-body">
+                                <div><code>npm run build:sourcemaps</code></div>
+                                <div><code>npm run glitchtip:sourcemaps:upload</code></div>
+                                <div><code>npm run glitchtip:sourcemaps:build-upload</code></div>
+                            </div>
+                            <p class="mt-4 text-body-sm text-muted">
+                                Isi <code>SENTRY_AUTH_TOKEN</code>, <code>SENTRY_ORG</code>, <code>SENTRY_PROJECT</code>, dan <code>SENTRY_RELEASE</code> sebelum upload.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <hr v-if="isAdmin" class="border-border" />
+
+            <section v-if="isAdmin">
+                <div class="eyebrow">Inventory</div>
+                <h2 class="text-title-lg text-body mt-3">Excel Import</h2>
+                <p class="text-body-sm text-muted mt-2 mb-6">
+                    Import asset massal dari Excel atau CSV. Jika `asset_tag` cocok dengan data yang sudah ada, asset akan diperbarui.
+                </p>
+
+                <div class="panel-card p-5">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div class="max-w-3xl">
+                            <div class="text-title-sm text-body">Upload File Inventory</div>
+                            <p class="text-body-sm text-muted mt-2">
+                                Gunakan template supaya format kolom konsisten untuk `site_code`, status, tanggal, dan custom fields.
+                            </p>
+                        </div>
+
+                        <a :href="route('inventory.import-template')" class="btn btn-ghost btn-sm">
+                            Download Template
+                        </a>
+                    </div>
+
+                    <form class="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]" @submit.prevent="submitImport">
+                        <div>
+                            <label class="form-label" for="settings-inventory-import-file">File Import</label>
+                            <input
+                                id="settings-inventory-import-file"
+                                type="file"
+                                accept=".xlsx,.xls,.csv,.txt"
+                                class="file-input file-input-bordered mt-2 w-full"
+                                :class="{ 'file-input-error': importForm.errors.file }"
+                                @change="handleImportFileChange"
+                            />
+                            <p class="mt-2 text-body-sm text-muted">
+                                Kolom utama: `site_code`, `name`, `category`, `status`, `asset_tag`, `serial_number`, `manufacturer`, `model`, `primary_ip`, `location_label`, `owner_name`, `acquired_at`, `warranty_expires_at`, `custom_fields`, `notes`.
+                            </p>
+                            <p v-if="importForm.errors.file" class="form-error">{{ importForm.errors.file }}</p>
+                        </div>
+
+                        <div class="flex items-end">
+                            <button type="submit" class="btn btn-primary" :disabled="importForm.processing || !importForm.file">
+                                {{ importForm.processing ? 'Importing...' : 'Import Excel' }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div v-if="inventoryImportReport" class="panel-subtle mt-5 p-5">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                            <div class="eyebrow">Import Report</div>
+                            <h3 class="mt-2 text-title-md text-body">Hasil import terakhir</h3>
+                        </div>
+
+                        <div class="status-chip">{{ inventoryImportReport.total_rows }} rows</div>
+                    </div>
+
+                    <div class="mt-5 grid gap-4 md:grid-cols-4">
+                        <div class="rounded-2xl border border-hairline bg-base-200/70 p-4">
+                            <div class="text-body-sm text-muted">Diproses</div>
+                            <div class="mt-2 text-title-md text-body">{{ inventoryImportReport.total_rows }}</div>
+                        </div>
+                        <div class="rounded-2xl border border-hairline bg-base-200/70 p-4">
+                            <div class="text-body-sm text-muted">Dibuat</div>
+                            <div class="mt-2 text-title-md text-body">{{ inventoryImportReport.created }}</div>
+                        </div>
+                        <div class="rounded-2xl border border-hairline bg-base-200/70 p-4">
+                            <div class="text-body-sm text-muted">Diperbarui</div>
+                            <div class="mt-2 text-title-md text-body">{{ inventoryImportReport.updated }}</div>
+                        </div>
+                        <div class="rounded-2xl border border-hairline bg-base-200/70 p-4">
+                            <div class="text-body-sm text-muted">Gagal</div>
+                            <div class="mt-2 text-title-md text-body">{{ inventoryImportReport.failed }}</div>
+                        </div>
+                    </div>
+
+                    <div v-if="importErrorPreview.length" class="mt-5 rounded-2xl border border-rose-400/30 bg-rose-500/8 p-4">
+                        <div class="text-body-sm font-medium text-body">Baris yang perlu dicek</div>
+                        <ul class="mt-3 space-y-2 text-body-sm text-muted">
+                            <li v-for="error in importErrorPreview" :key="error">{{ error }}</li>
+                        </ul>
+                        <p v-if="(inventoryImportReport.errors?.length ?? 0) > importErrorPreview.length" class="mt-3 text-body-sm text-muted">
+                            Menampilkan {{ importErrorPreview.length }} dari {{ inventoryImportReport.errors.length }} error.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <hr v-if="isAdmin" class="border-border" />
+
+            <section v-if="isAdmin">
                 <div class="eyebrow">Runtime</div>
                 <h2 class="text-title-lg text-body mt-3">Proxy Control</h2>
                 <p class="text-body-sm text-muted mt-2 mb-6">
-                    Jalankan atau restart `ssh-terminal-proxy` langsung dari UI admin jika perlu akses terminal Headscale.
+                    {{
+                        proxyServiceManagedExternally
+                            ? 'SSH terminal proxy sedang dikelola sebagai service terpisah. Status tetap bisa dipantau dari sini.'
+                            : 'Jalankan atau restart `ssh-terminal-proxy` langsung dari UI admin jika perlu akses terminal Headscale.'
+                    }}
                 </p>
 
                 <div class="panel-card p-5 space-y-4">
@@ -187,6 +424,13 @@ async function controlProxy(action) {
                         </div>
                     </div>
 
+                    <div
+                        v-if="proxyServiceManagedExternally"
+                        class="rounded-lg border border-hairline bg-base-300 px-4 py-4 text-body-sm text-body"
+                    >
+                        Start, stop, dan restart dilakukan dari Coolify karena proxy berjalan sebagai container terpisah.
+                    </div>
+
                     <div v-if="runtimeFlash" class="rounded-lg border border-hairline bg-base-300 px-4 py-4 text-body-sm text-body">
                         {{ runtimeFlash }}
                     </div>
@@ -202,7 +446,7 @@ async function controlProxy(action) {
                             type="button"
                             class="btn runtime-action-btn"
                             :class="action.buttonClass"
-                            :disabled="runtimeBusyAction !== ''"
+                            :disabled="runtimeBusyAction !== '' || (proxyServiceManagedExternally && action.id !== 'refresh')"
                             @click="action.id === 'refresh' ? refreshProxyStatus() : controlProxy(action.id)"
                         >
                             <span v-if="runtimeBusyAction === action.id" class="loading loading-spinner loading-xs shrink-0" aria-hidden="true" />

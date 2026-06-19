@@ -1,0 +1,135 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      CONTAINER_ROLE: app
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_KEY: ${APP_KEY}
+      APP_URL: ${APP_URL}
+      APP_NAME: ${APP_NAME:-InfraControl}
+      APP_LOCALE: ${APP_LOCALE:-en}
+      APP_FALLBACK_LOCALE: ${APP_FALLBACK_LOCALE:-en}
+      APP_FAKER_LOCALE: ${APP_FAKER_LOCALE:-en_US}
+      LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_CONNECTION: ${DB_CONNECTION:-sqlite}
+      DB_DATABASE: ${DB_DATABASE:-/var/www/html/storage/app/database/database.sqlite}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+      CACHE_STORE: ${CACHE_STORE:-database}
+      SESSION_DRIVER: ${SESSION_DRIVER:-database}
+      AUTO_RUN_MIGRATIONS: ${AUTO_RUN_MIGRATIONS:-true}
+      SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      SENTRY_SAMPLE_RATE: ${SENTRY_SAMPLE_RATE:-1.0}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.01}
+      SENTRY_SEND_DEFAULT_PII: ${SENTRY_SEND_DEFAULT_PII:-false}
+      SENTRY_SEND_LOCAL: ${SENTRY_SEND_LOCAL:-false}
+      GLITCHTIP_SECURITY_ENDPOINT: ${GLITCHTIP_SECURITY_ENDPOINT:-}
+      GLITCHTIP_CSP_REPORT_ONLY: ${GLITCHTIP_CSP_REPORT_ONLY:-true}
+      GLITCHTIP_CSP_POLICY: ${GLITCHTIP_CSP_POLICY:-}
+      VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+      VITE_SENTRY_ENVIRONMENT: ${VITE_SENTRY_ENVIRONMENT:-production}
+      VITE_SENTRY_RELEASE: ${VITE_SENTRY_RELEASE:-}
+      VITE_SENTRY_TRACES_SAMPLE_RATE: ${VITE_SENTRY_TRACES_SAMPLE_RATE:-0}
+      VITE_SENTRY_ENABLED: ${VITE_SENTRY_ENABLED:-true}
+      SSH_TERMINAL_PROXY_URL: ${SSH_TERMINAL_PROXY_URL}
+      SSH_TERMINAL_PROXY_HEALTH_URL: http://terminal-proxy:8078/healthz
+      SSH_TERMINAL_PROXY_MANAGED_EXTERNALLY: "true"
+    expose:
+      - "8080"
+    volumes:
+      - app-storage:/var/www/html/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/up >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      CONTAINER_ROLE: queue
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_KEY: ${APP_KEY}
+      APP_URL: ${APP_URL}
+      APP_NAME: ${APP_NAME:-InfraControl}
+      LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_CONNECTION: ${DB_CONNECTION:-sqlite}
+      DB_DATABASE: ${DB_DATABASE:-/var/www/html/storage/app/database/database.sqlite}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+      CACHE_STORE: ${CACHE_STORE:-database}
+      SESSION_DRIVER: ${SESSION_DRIVER:-database}
+      QUEUE_WORKER_TRIES: ${QUEUE_WORKER_TRIES:-1}
+      QUEUE_WORKER_TIMEOUT: ${QUEUE_WORKER_TIMEOUT:-0}
+      QUEUE_WORKER_SLEEP: ${QUEUE_WORKER_SLEEP:-1}
+      QUEUE_WORKER_QUEUE: ${QUEUE_WORKER_QUEUE:-default}
+      SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    volumes:
+      - app-storage:/var/www/html/storage
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      CONTAINER_ROLE: scheduler
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_KEY: ${APP_KEY}
+      APP_URL: ${APP_URL}
+      APP_NAME: ${APP_NAME:-InfraControl}
+      LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_CONNECTION: ${DB_CONNECTION:-sqlite}
+      DB_DATABASE: ${DB_DATABASE:-/var/www/html/storage/app/database/database.sqlite}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+      CACHE_STORE: ${CACHE_STORE:-database}
+      SESSION_DRIVER: ${SESSION_DRIVER:-database}
+      SCHEDULER_INTERVAL: ${SCHEDULER_INTERVAL:-60}
+      SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    volumes:
+      - app-storage:/var/www/html/storage
+
+  terminal-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      CONTAINER_ROLE: terminal-proxy
+      APP_URL: ${APP_URL}
+      SSH_TERMINAL_PROXY_HOST: 0.0.0.0
+      SSH_TERMINAL_PROXY_PORT: 8078
+    expose:
+      - "8078"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8078/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  app-storage:
