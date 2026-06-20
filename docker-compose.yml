@@ -120,6 +120,8 @@ services:
       SSH_TERMINAL_PROXY_MANAGED_EXTERNALLY: "true"
     expose:
       - "8088"
+    ports:
+      - "8088:8088"
     networks:
       - default
       - coolify

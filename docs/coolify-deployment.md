@@ -89,6 +89,17 @@ Gunakan domain terpisah untuk terminal proxy. Konfigurasi yang direkomendasikan:
 - `APP_URL=https://incontrol.example.com`
 - `SSH_TERMINAL_PROXY_URL=wss://terminal.incontrol.example.com/terminal`
 
+### Cloudflare Tunnel langsung ke port host
+
+Jika cloudflared route ke `http://localhost:8088` (bypass Traefik Coolify):
+
+- Service `app` sudah mem-publish `ports: "8088:8088"` di compose.
+- **Jangan** tambahkan suffix `:8088` di domain Coolify — Traefik tidak dipakai untuk routing app.
+- Domain di Coolify bisa dikosongkan untuk service `app`, atau biarkan tanpa port suffix.
+- Cloudflared config cukup: `service: http://localhost:8088`
+
+Untuk terminal proxy via cloudflared terpisah, publish juga `8078:8078` pada service `terminal-proxy` jika diperlukan.
+
 Alasannya:
 
 - Browser origin untuk terminal tetap `APP_URL`, dan itu memang yang diizinkan oleh proxy.
