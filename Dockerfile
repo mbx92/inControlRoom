@@ -67,6 +67,7 @@ ENV APP_DIR=/var/www/html
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    iputils-ping \
     libcurl4-openssl-dev \
     nginx \
     nodejs \

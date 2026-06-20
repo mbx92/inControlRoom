@@ -122,7 +122,7 @@ class AssetReachabilityService
             return new Process(['ping', '-n', '1', '-w', '1000', $ipAddress]);
         }
 
-        return new Process(['ping', '-c', '1', $ipAddress]);
+        return new Process(['ping', '-c', '1', '-W', '1', $ipAddress]);
     }
 
     private function extractLatency(string $output): ?int
