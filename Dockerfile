@@ -16,11 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" \
+    && docker-php-ext-install -j1 \
         dom \
         simplexml \
         xml \
-    && docker-php-ext-install -j"$(nproc)" \
         xmlreader \
         xmlwriter \
     && docker-php-ext-install -j"$(nproc)" \
@@ -88,11 +87,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" \
+    && docker-php-ext-install -j1 \
         dom \
         simplexml \
         xml \
-    && docker-php-ext-install -j"$(nproc)" \
         xmlreader \
         xmlwriter \
     && docker-php-ext-install -j"$(nproc)" \
