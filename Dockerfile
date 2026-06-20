@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM php:8.3-cli-bookworm AS vendor
+FROM php:8.4-cli-bookworm AS vendor
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -16,14 +16,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-source extract \
-    && docker-php-ext-install -j1 \
-        dom \
-        simplexml \
-        xml \
-        xmlreader \
-        xmlwriter \
-    && docker-php-source delete \
     && docker-php-ext-install -j"$(nproc)" \
         curl \
         gd \
@@ -67,7 +59,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM php:8.3-fpm-bookworm AS runtime
+FROM php:8.4-fpm-bookworm AS runtime
 
 ENV APP_DIR=/var/www/html
 
@@ -89,14 +81,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-source extract \
-    && docker-php-ext-install -j1 \
-        dom \
-        simplexml \
-        xml \
-        xmlreader \
-        xmlwriter \
-    && docker-php-source delete \
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
         curl \
