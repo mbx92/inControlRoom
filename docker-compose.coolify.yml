@@ -48,6 +48,9 @@ services:
       SSH_TERMINAL_PROXY_MANAGED_EXTERNALLY: "true"
     expose:
       - "8088"
+    networks:
+      - default
+      - coolify
     volumes:
       - app-storage:/var/www/html/storage
     healthcheck:
@@ -88,6 +91,9 @@ services:
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    networks:
+      - default
+      - coolify
     volumes:
       - app-storage:/var/www/html/storage
 
@@ -119,6 +125,9 @@ services:
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    networks:
+      - default
+      - coolify
     volumes:
       - app-storage:/var/www/html/storage
 
@@ -138,6 +147,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    networks:
+      - default
+      - coolify
 
 volumes:
   app-storage:
+
+networks:
+  coolify:
+    external: true
