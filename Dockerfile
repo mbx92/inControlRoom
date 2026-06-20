@@ -17,8 +17,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j"$(nproc)" \
-        curl \
         dom \
+        simplexml \
+        xml \
+    && docker-php-ext-install -j"$(nproc)" \
+        xmlreader \
+        xmlwriter \
+    && docker-php-ext-install -j"$(nproc)" \
+        curl \
         gd \
         intl \
         mbstring \
@@ -26,10 +32,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pdo_mysql \
         pdo_pgsql \
         pdo_sqlite \
-        simplexml \
-        xml \
-        xmlreader \
-        xmlwriter \
         zip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -87,9 +89,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j"$(nproc)" \
+        dom \
+        simplexml \
+        xml \
+    && docker-php-ext-install -j"$(nproc)" \
+        xmlreader \
+        xmlwriter \
+    && docker-php-ext-install -j"$(nproc)" \
         bcmath \
         curl \
-        dom \
         exif \
         gd \
         intl \
@@ -98,10 +106,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pdo_mysql \
         pdo_pgsql \
         pdo_sqlite \
-        simplexml \
-        xml \
-        xmlreader \
-        xmlwriter \
         zip \
     && rm -rf /var/lib/apt/lists/*
 
