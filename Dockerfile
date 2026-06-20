@@ -1,6 +1,40 @@
 # syntax=docker/dockerfile:1.7
 
-FROM composer:2 AS vendor
+FROM php:8.3-cli-bookworm AS vendor
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    unzip \
+    libcurl4-openssl-dev \
+    libfreetype6-dev \
+    libicu-dev \
+    libjpeg62-turbo-dev \
+    libonig-dev \
+    libpng-dev \
+    libpq-dev \
+    libsqlite3-dev \
+    libxml2-dev \
+    libzip-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j"$(nproc)" \
+        curl \
+        dom \
+        gd \
+        intl \
+        mbstring \
+        pcntl \
+        pdo_mysql \
+        pdo_pgsql \
+        pdo_sqlite \
+        simplexml \
+        xml \
+        xmlreader \
+        xmlwriter \
+        zip \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
 WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install \
@@ -36,6 +70,7 @@ ENV APP_DIR=/var/www/html
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    libcurl4-openssl-dev \
     nginx \
     nodejs \
     openssh-client \
@@ -53,13 +88,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
+        curl \
+        dom \
         exif \
         gd \
         intl \
+        mbstring \
         pcntl \
         pdo_mysql \
         pdo_pgsql \
         pdo_sqlite \
+        simplexml \
+        xml \
+        xmlreader \
+        xmlwriter \
         zip \
     && rm -rf /var/lib/apt/lists/*
 
