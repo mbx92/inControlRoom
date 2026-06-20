@@ -2,6 +2,7 @@
 .DS_Store
 .env
 .env.backup
+docker-compose.local.yml
 .env.coolify
 .env.production
 .phpactor.json

@@ -1,3 +1,7 @@
+# ============================================================
+# Stage 1: PHP vendor (composer install)
+# Cache busted hanya saat composer.json / composer.lock berubah
+# ============================================================
 FROM php:8.4-cli-bookworm AS vendor
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -14,23 +18,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j2 \
-        curl \
-        gd \
-        intl \
-        mbstring \
-        pcntl \
-        pdo_mysql \
-        pdo_pgsql \
-        pdo_sqlite \
-        zip \
+    && docker-php-ext-install -j$(nproc) \
+        curl gd intl mbstring pcntl pdo_mysql pdo_pgsql pdo_sqlite zip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-
 ENV COMPOSER_MEMORY_LIMIT=512M
 
 WORKDIR /app
+
+# Layer cache: dependensi dulu sebelum copy source
 COPY composer.json composer.lock ./
 RUN composer install \
     --no-dev \
@@ -38,29 +35,43 @@ RUN composer install \
     --no-interaction \
     --no-progress \
     --optimize-autoloader \
-    --no-scripts
-COPY . .
-RUN composer install \
-    --no-dev \
-    --prefer-dist \
-    --no-interaction \
-    --no-progress \
-    --optimize-autoloader
+    --no-scripts \
+    --no-autoloader
 
+# Copy source dan generate autoloader
+COPY . .
+RUN composer dump-autoload \
+    --no-dev \
+    --optimize \
+    --no-interaction
+
+# ============================================================
+# Stage 2: Node frontend (vite build)
+# Cache busted hanya saat package*.json atau source berubah
+# ============================================================
 FROM node:22-bookworm-slim AS frontend
 
 WORKDIR /app
+
+# Layer cache: package dulu
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
-COPY . .
-ENV NODE_OPTIONS=--max-old-space-size=1024
-RUN npm run build \
-    && npm prune --omit=dev
 
+# Copy source
+COPY . .
+
+# Build assets
+ENV NODE_OPTIONS=--max-old-space-size=512
+RUN npm run build
+
+# ============================================================
+# Stage 3: Runtime (PHP-FPM + nginx + supervisor)
+# ============================================================
 FROM php:8.4-fpm-bookworm AS runtime
 
 ENV APP_DIR=/var/www/html
 
+# Install system deps + PHP extensions sekali jalan
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libcurl4-openssl-dev \
@@ -79,28 +90,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j2 \
-        bcmath \
-        curl \
-        exif \
-        gd \
-        intl \
-        mbstring \
-        pcntl \
-        pdo_mysql \
-        pdo_pgsql \
-        pdo_sqlite \
-        zip \
+    && docker-php-ext-install -j$(nproc) \
+        bcmath curl exif gd intl mbstring pcntl pdo_mysql pdo_pgsql pdo_sqlite zip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR ${APP_DIR}
 
-COPY --from=vendor /app ${APP_DIR}
-COPY --from=frontend /app/public/build ${APP_DIR}/public/build
-COPY --from=frontend /app/node_modules ${APP_DIR}/node_modules
-COPY docker/nginx/default.conf /etc/nginx/sites-available/default
-COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY docker/start-container.sh /usr/local/bin/start-container
+# Copy hasil build dari stage sebelumnya
+COPY --from=vendor  /app          ${APP_DIR}
+COPY --from=frontend /app/public/build  ${APP_DIR}/public/build
+COPY --from=frontend /app/node_modules  ${APP_DIR}/node_modules
+
+# Config files
+COPY docker/nginx/default.conf       /etc/nginx/sites-available/default
+COPY docker/supervisord.conf         /etc/supervisor/conf.d/supervisord.conf
+COPY docker/start-container.sh       /usr/local/bin/start-container
 
 RUN chmod +x /usr/local/bin/start-container \
     && rm -f /etc/nginx/sites-enabled/default \
