@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 FROM php:8.4-cli-bookworm AS vendor
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -16,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" \
+    && docker-php-ext-install -j2 \
         curl \
         gd \
         intl \
@@ -29,6 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+ENV COMPOSER_MEMORY_LIMIT=512M
 
 WORKDIR /app
 COPY composer.json composer.lock ./
@@ -47,17 +47,15 @@ RUN composer install \
     --no-progress \
     --optimize-autoloader
 
-FROM node:22-bookworm-slim AS node_modules_prod
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
-
 FROM node:22-bookworm-slim AS frontend
+
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 COPY . .
-RUN npm run build
+ENV NODE_OPTIONS=--max-old-space-size=1024
+RUN npm run build \
+    && npm prune --omit=dev
 
 FROM php:8.4-fpm-bookworm AS runtime
 
@@ -81,7 +79,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" \
+    && docker-php-ext-install -j2 \
         bcmath \
         curl \
         exif \
@@ -99,7 +97,7 @@ WORKDIR ${APP_DIR}
 
 COPY --from=vendor /app ${APP_DIR}
 COPY --from=frontend /app/public/build ${APP_DIR}/public/build
-COPY --from=node_modules_prod /app/node_modules ${APP_DIR}/node_modules
+COPY --from=frontend /app/node_modules ${APP_DIR}/node_modules
 COPY docker/nginx/default.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/start-container.sh /usr/local/bin/start-container
