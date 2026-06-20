@@ -47,11 +47,11 @@ services:
       SSH_TERMINAL_PROXY_HEALTH_URL: http://terminal-proxy:8078/healthz
       SSH_TERMINAL_PROXY_MANAGED_EXTERNALLY: "true"
     expose:
-      - "8080"
+      - "8088"
     volumes:
       - app-storage:/var/www/html/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/up >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8088/up >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10

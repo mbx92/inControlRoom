@@ -59,7 +59,7 @@ case "${ROLE}" in
             run_migrations &
         fi
 
-        log "starting supervisord (nginx + php-fpm on :8080)"
+        log "starting supervisord (nginx + php-fpm on :8088)"
         exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
         ;;
 

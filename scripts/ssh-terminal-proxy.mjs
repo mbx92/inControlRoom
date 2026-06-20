@@ -11,7 +11,7 @@ const fileEnv = readEnvFile(envFile);
 
 const host = process.env.SSH_TERMINAL_PROXY_HOST || fileEnv.SSH_TERMINAL_PROXY_HOST || '127.0.0.1';
 const port = Number(process.env.SSH_TERMINAL_PROXY_PORT || fileEnv.SSH_TERMINAL_PROXY_PORT || 8078);
-const appUrl = process.env.APP_URL || fileEnv.APP_URL || 'http://127.0.0.1:8000';
+const appUrl = process.env.APP_URL || fileEnv.APP_URL || 'http://127.0.0.1:8088';
 const allowedAppOrigins = buildAllowedAppOrigins(appUrl);
 
 const server = http.createServer((request, response) => {
@@ -260,7 +260,7 @@ function buildAllowedAppOrigins(baseUrl) {
 
         return origins;
     } catch {
-        return new Set(['http://127.0.0.1:8000', 'http://localhost:8000']);
+        return new Set(['http://127.0.0.1:8088', 'http://localhost:8088']);
     }
 }
 

@@ -10,9 +10,9 @@
         "vnc-proxy": "node scripts/vnc-proxy.mjs",
         "dev": "vite",
         "dev:lan": "VITE_DEV_LAN=1 vite --host 0.0.0.0 --port 5173",
-        "serve:lan": "php artisan serve --host=0.0.0.0 --port=8000",
-        "dev:all": "concurrently -k -n laravel,vite -c blue,magenta \"php artisan serve --host=127.0.0.1 --port=8000\" \"vite\"",
-        "dev:all:lan": "concurrently -k -n laravel,vite -c blue,magenta \"php artisan serve --host=0.0.0.0 --port=8000\" \"npm run dev:lan\"",
+        "serve:lan": "php artisan serve --host=0.0.0.0 --port=8088",
+        "dev:all": "concurrently -k -n laravel,vite -c blue,magenta \"php artisan serve --host=127.0.0.1 --port=8088\" \"vite\"",
+        "dev:all:lan": "concurrently -k -n laravel,vite -c blue,magenta \"php artisan serve --host=0.0.0.0 --port=8088\" \"npm run dev:lan\"",
         "glitchtip:sourcemaps:upload": "sh ./scripts/upload-glitchtip-sourcemaps.sh",
         "glitchtip:sourcemaps:build-upload": "npm run build:sourcemaps && npm run glitchtip:sourcemaps:upload"
     },

@@ -108,6 +108,6 @@ RUN chmod +x /usr/local/bin/start-container \
     && mkdir -p /run/php /run/nginx ${APP_DIR}/storage ${APP_DIR}/bootstrap/cache \
     && chown -R www-data:www-data ${APP_DIR}/storage ${APP_DIR}/bootstrap/cache
 
-EXPOSE 8080 8078
+EXPOSE 8088 8078
 
 ENTRYPOINT ["/usr/local/bin/start-container"]

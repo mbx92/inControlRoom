@@ -231,7 +231,7 @@ class SettingsController extends Controller
             return trim($configured);
         }
 
-        $appUrl = config('app.url', 'http://127.0.0.1:8000');
+        $appUrl = config('app.url', 'http://127.0.0.1:8088');
         $parts = parse_url($appUrl) ?: [];
         $scheme = ($parts['scheme'] ?? 'http') === 'https' ? 'https' : 'http';
         $host = $parts['host'] ?? '127.0.0.1';
