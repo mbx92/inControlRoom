@@ -47,6 +47,25 @@ Jika deploy gagal di step `#1 [internal] load local bake definitions`:
 
 `docker-compose.yml` sudah mendeklarasikan semua build args yang Coolify kirim, sehingga BuildKit bake tidak gagal karena "Unknown variable".
 
+## Super Admin (auto-seed)
+
+Setelah migration sukses, container `app` otomatis menjalankan `SuperAdminSeeder` jika `AUTO_RUN_SEED=true` (default).
+
+Wajib di Coolify env (production):
+
+```env
+SUPERADMIN_EMAIL=admin@yourdomain.com
+SUPERADMIN_PASSWORD=your-strong-password-here
+SUPERADMIN_NAME=Super Admin
+AUTO_RUN_SEED=true
+```
+
+Perilaku:
+
+- User dibuat sekali via `firstOrCreate` — redeploy **tidak** reset password jika user sudah ada.
+- Di `local`/`testing`, default fallback: `admin@infracontrol.local` / `password`.
+- Set `AUTO_RUN_SEED=false` jika ingin seed manual saja.
+
 ## Environment Minimum
 
 Isi minimal variable berikut di Coolify:
@@ -67,6 +86,11 @@ DB_PASSWORD=replace-me
 QUEUE_CONNECTION=database
 CACHE_STORE=database
 SESSION_DRIVER=database
+
+SUPERADMIN_EMAIL=admin@example.com
+SUPERADMIN_PASSWORD=replace-with-strong-password
+SUPERADMIN_NAME=Super Admin
+AUTO_RUN_SEED=true
 
 SSH_TERMINAL_PROXY_URL=wss://terminal.incontrol.example.com/terminal
 

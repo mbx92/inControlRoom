@@ -47,9 +47,24 @@ run_migrations() {
     log "running migrations (DB=${DB_CONNECTION:-sqlite} host=${DB_HOST:-n/a})..."
     if php artisan migrate --force --no-interaction; then
         log "migrations completed"
+        run_superadmin_seed
     else
         log "WARNING: migration failed - check DB_HOST/DB_PASSWORD in Coolify env"
         log "WARNING: app will still start, but database features will not work"
+    fi
+}
+
+run_superadmin_seed() {
+    if [ "${AUTO_RUN_SEED:-true}" != "true" ]; then
+        log "superadmin seeder skipped (AUTO_RUN_SEED=false)"
+        return
+    fi
+
+    log "running superadmin seeder..."
+    if php artisan db:seed --class=SuperAdminSeeder --force --no-interaction; then
+        log "superadmin seeder completed"
+    else
+        log "WARNING: superadmin seeder failed - check SUPERADMIN_EMAIL/SUPERADMIN_PASSWORD"
     fi
 }
 
