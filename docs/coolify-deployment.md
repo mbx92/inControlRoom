@@ -29,6 +29,24 @@ Stack ini dibagi menjadi empat service:
    - `app` ke domain utama, misalnya `https://incontrol.example.com`
    - `terminal-proxy` ke subdomain websocket, misalnya `https://terminal.incontrol.example.com`
 
+## Build Gagal (exit code 255)
+
+Jika deploy gagal di step `#1 [internal] load local bake definitions`:
+
+1. **Bersihkan build cache di server Coolify:**
+   ```bash
+   docker builder prune -f
+   ```
+2. **Tambahkan env var di Coolify UI:**
+   ```env
+   COMPOSE_BAKE=false
+   ```
+   Ini menonaktifkan Docker Bake integration yang sering crash di VPS dengan RAM terbatas.
+3. **Pastikan Docker Compose Location** mengarah ke `docker-compose.coolify.yml` (bukan `docker-compose.yml` generik).
+4. Redeploy setelah push perubahan terbaru.
+
+`docker-compose.yml` sudah mendeklarasikan semua build args yang Coolify kirim, sehingga BuildKit bake tidak gagal karena "Unknown variable".
+
 ## Environment Minimum
 
 Isi minimal variable berikut di Coolify:
