@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Log;
 
 class SuperAdminSeeder extends Seeder
 {
@@ -12,19 +13,19 @@ class SuperAdminSeeder extends Seeder
 
     public function run(): void
     {
-        $email = trim((string) env('SUPERADMIN_EMAIL', ''));
-        $password = (string) env('SUPERADMIN_PASSWORD', '');
-        $name = trim((string) env('SUPERADMIN_NAME', 'Super Admin'));
+        $email = trim((string) config('admin.email', ''));
+        $password = (string) config('admin.password', '');
+        $name = trim((string) config('admin.name', 'Super Admin'));
 
-        if (app()->environment('production')) {
-            if ($email === '' || $password === '') {
-                $this->command?->warn('SuperAdminSeeder skipped: set SUPERADMIN_EMAIL and SUPERADMIN_PASSWORD in production.');
+        if ($email === '' || $password === '') {
+            if (app()->environment('production')) {
+                Log::warning('SuperAdminSeeder skipped: set SUPERADMIN_EMAIL and SUPERADMIN_PASSWORD in Coolify environment variables.');
 
                 return;
             }
-        } else {
-            $email = $email !== '' ? $email : 'admin@infracontrol.local';
-            $password = $password !== '' ? $password : 'password';
+
+            $email = 'admin@infracontrol.local';
+            $password = 'password';
             $name = $name !== '' ? $name : 'Admin';
         }
 
@@ -41,5 +42,10 @@ class SuperAdminSeeder extends Seeder
         if (! $user->wasRecentlyCreated && $user->role !== User::ROLE_ADMIN) {
             $user->update(['role' => User::ROLE_ADMIN]);
         }
+
+        Log::info('SuperAdminSeeder ensured admin user exists.', [
+            'email' => $email,
+            'created' => $user->wasRecentlyCreated,
+        ]);
     }
 }

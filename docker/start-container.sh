@@ -60,18 +60,25 @@ run_superadmin_seed() {
         return
     fi
 
-    log "running superadmin seeder..."
+    if [ -z "${SUPERADMIN_EMAIL:-}" ] || [ -z "${SUPERADMIN_PASSWORD:-}" ]; then
+        log "WARNING: SUPERADMIN_EMAIL or SUPERADMIN_PASSWORD is empty — seeder will skip in production"
+        log "WARNING: add both vars in Coolify Environment Variables, then redeploy or run: php artisan infracontrol:ensure-superadmin"
+    fi
+
+    log "running superadmin seeder (email=${SUPERADMIN_EMAIL:-unset})..."
     if php artisan db:seed --class=SuperAdminSeeder --force --no-interaction; then
         log "superadmin seeder completed"
     else
-        log "WARNING: superadmin seeder failed - check SUPERADMIN_EMAIL/SUPERADMIN_PASSWORD"
+        log "WARNING: superadmin seeder failed - check SUPERADMIN_EMAIL/SUPERADMIN_PASSWORD and DB connection"
     fi
 }
 
 case "${ROLE}" in
     app)
         if [ "${AUTO_RUN_MIGRATIONS:-true}" = "true" ]; then
-            run_migrations &
+            run_migrations
+        elif [ "${AUTO_RUN_SEED:-true}" = "true" ]; then
+            run_superadmin_seed
         fi
 
         log "starting supervisord (nginx + php-fpm on :8088)"
