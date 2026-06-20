@@ -16,12 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-source extract \
     && docker-php-ext-install -j1 \
         dom \
         simplexml \
         xml \
         xmlreader \
         xmlwriter \
+    && docker-php-source delete \
     && docker-php-ext-install -j"$(nproc)" \
         curl \
         gd \
@@ -87,12 +89,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libzip-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-source extract \
     && docker-php-ext-install -j1 \
         dom \
         simplexml \
         xml \
         xmlreader \
         xmlwriter \
+    && docker-php-source delete \
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
         curl \
