@@ -1,6 +1,6 @@
 #!/bin/sh
 
-set -eu
+set -e
 
 APP_DIR="${APP_DIR:-/var/www/html}"
 ROLE="${CONTAINER_ROLE:-app}"
@@ -37,7 +37,8 @@ php artisan storage:link --force >/dev/null 2>&1 || true
 case "${ROLE}" in
     app)
         if [ "${AUTO_RUN_MIGRATIONS:-true}" = "true" ]; then
-            php artisan migrate --force --no-interaction
+            php artisan migrate --force --no-interaction || \
+                echo "WARNING: Database migration failed, continuing anyway." >&2
         fi
 
         exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
