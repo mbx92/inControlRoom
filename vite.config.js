@@ -25,11 +25,19 @@ export default defineConfig(({ mode }) => {
     const lanIp = env.VITE_DEV_LAN_IP || getLanIp();
     const devHost = lanMode ? '0.0.0.0' : '127.0.0.1';
     const devOrigin = lanMode ? `http://${lanIp}:${vitePort}` : undefined;
-    const appUrl = env.APP_URL || 'http://127.0.0.1:8088';
+    const appUrl = env.APP_URL || 'http://localhost:8088';
+    const appPort = (() => {
+        try {
+            const p = new URL(appUrl).port;
+            return p || '80';
+        } catch {
+            return '8088';
+        }
+    })();
 
     const corsOrigins = lanMode
-        ? [appUrl, `http://${lanIp}:8088`, 'http://127.0.0.1:8088', 'http://localhost:8088']
-        : ['http://127.0.0.1:8088', 'http://localhost:8088'];
+        ? [appUrl, `http://${lanIp}:${appPort}`, `http://127.0.0.1:${appPort}`, `http://localhost:${appPort}`]
+        : [`http://127.0.0.1:${appPort}`, `http://localhost:${appPort}`];
 
     return {
         plugins: [
@@ -60,7 +68,7 @@ export default defineConfig(({ mode }) => {
                         if (!lanMode) return;
                         console.log('');
                         console.log('  LAN dev mode');
-                        console.log(`  App (all devices):  http://${lanIp}:8088`);
+                        console.log(`  App (all devices):  http://${lanIp}:${appPort}`);
                         console.log(`  Vite origin:        ${devOrigin}`);
                         console.log(`  HMR WebSocket:      ws://${lanIp}:${vitePort}`);
                         console.log('  Restart Vite after IP/Wi-Fi change.');

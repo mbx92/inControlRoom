@@ -329,6 +329,67 @@ class VaultAndIntegrationFlowTest extends TestCase
         $this->assertSame(200, $integration->last_test_meta['expected_status']);
     }
 
+    public function test_api_health_check_stores_qnap_nas_metadata(): void
+    {
+        $user = User::factory()->operator()->create();
+        $vaultEntry = VaultEntry::create([
+            'name' => 'QNAP Admin Password',
+            'kind' => 'generic_secret',
+            'ciphertext' => json_encode([
+                'password' => 'super-secret-password',
+            ]),
+            'is_active' => true,
+        ]);
+
+        $integration = Integration::create([
+            'type' => 'nas',
+            'name' => 'Branch File NAS',
+            'base_url' => 'https://qnap.example.com:443',
+            'vault_entry_id' => $vaultEntry->id,
+            'credentials' => json_encode([]),
+            'config' => [
+                'verify_ssl' => true,
+                'vendor' => 'qnap',
+                'username' => 'admin',
+                'health_path' => '/cgi-bin/',
+                'health_method' => 'GET',
+                'health_expected_status' => 200,
+            ],
+            'is_active' => true,
+        ]);
+
+        Http::fake([
+            'https://qnap.example.com*/cgi-bin/authLogin.cgi*' => Http::response(<<<'XML'
+<?xml version="1.0" encoding="UTF-8" ?>
+<QDocRoot version="1.0">
+    <authPassed><![CDATA[1]]></authPassed>
+    <authSid><![CDATA[qnap-sid-123]]></authSid>
+    <isAdmin><![CDATA[1]]></isAdmin>
+</QDocRoot>
+XML, 200, ['Content-Type' => 'application/xml']),
+            'https://qnap.example.com*/cgi-bin/filemanager/utilRequest.cgi*' => Http::response([
+                'status' => 1,
+                'servername' => 'QNAP-A1',
+                'version' => '5.0.1',
+                'build' => '20240501',
+            ], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('integrations.test', $integration))
+            ->assertRedirect();
+
+        $integration->refresh();
+
+        $this->assertSame('success', $integration->last_test_status);
+        $this->assertSame('nas', $integration->last_test_meta['kind']);
+        $this->assertSame('qnap', $integration->last_test_meta['vendor']);
+        $this->assertSame('valid', $integration->last_test_meta['auth_status']);
+        $this->assertSame('QNAP-A1', $integration->last_test_meta['servername']);
+        $this->assertSame('5.0.1', $integration->last_test_meta['version']);
+        $this->assertStringEndsWith('/cgi-bin/filemanager/utilRequest.cgi', $integration->last_test_meta['health_endpoint']);
+    }
+
     public function test_admin_can_disable_ssl_verification_when_updating_integration(): void
     {
         $user = User::factory()->admin()->create();
@@ -649,6 +710,77 @@ class VaultAndIntegrationFlowTest extends TestCase
         $this->assertSame(1000, $summary['storage_total_bytes']);
         $this->assertSame(400, $summary['storage_used_bytes']);
         $this->assertSame(600, $summary['storage_free_bytes']);
+    }
+
+    public function test_qnap_nas_capture_returns_volumes_and_disks(): void
+    {
+        $vaultEntry = VaultEntry::create([
+            'name' => 'QNAP Admin Password',
+            'kind' => 'generic_secret',
+            'ciphertext' => json_encode([
+                'password' => 'super-secret-password',
+            ]),
+            'is_active' => true,
+        ]);
+
+        $integration = Integration::create([
+            'type' => 'nas',
+            'name' => 'Branch File NAS',
+            'base_url' => 'https://qnap.example.com:443',
+            'vault_entry_id' => $vaultEntry->id,
+            'credentials' => json_encode([]),
+            'config' => [
+                'verify_ssl' => true,
+                'vendor' => 'qnap',
+                'username' => 'admin',
+            ],
+            'is_active' => true,
+        ]);
+
+        Http::fake([
+            'https://qnap.example.com*/cgi-bin/authLogin.cgi*' => Http::response(<<<'XML'
+<?xml version="1.0" encoding="UTF-8" ?>
+<QDocRoot version="1.0">
+    <authPassed><![CDATA[1]]></authPassed>
+    <authSid><![CDATA[qnap-sid-123]]></authSid>
+    <isAdmin><![CDATA[1]]></isAdmin>
+</QDocRoot>
+XML, 200, ['Content-Type' => 'application/xml']),
+            'https://qnap.example.com*/cgi-bin/filemanager/utilRequest.cgi*' => Http::response([
+                [
+                    'volume_id' => 1,
+                    'volume_name' => 'DataVol1',
+                    'volume_status' => 0,
+                    'pool_status' => -1,
+                    'capacity' => 544,
+                    'used_size' => 16,
+                    'free_size' => 527,
+                    'volume_unit' => 'GB',
+                    'volume_free_unit' => 'GB',
+                    'raid_disk_cnt' => 2,
+                    'raid_disk_list' => '1 2',
+                    'disk_list' => '1 2 3 4 5 6 7 8',
+                    'spare_disk_list' => '7 8',
+                ],
+            ], 200),
+        ]);
+
+        $snapshot = app(NasMonitoringService::class)->capture($integration);
+        $summary = app(NasMonitoringService::class)->summarize($integration, $snapshot);
+
+        $this->assertCount(1, $snapshot['volumes']);
+        $this->assertCount(8, $snapshot['disks']);
+        $this->assertCount(8, $snapshot['physical_disks']);
+        $this->assertCount(2, $snapshot['raid_disks']);
+        $this->assertSame('DataVol1', $snapshot['volumes'][0]['name']);
+        $this->assertSame('Disk 1', $snapshot['disks'][0]['name']);
+        $this->assertSame(1, $summary['volume_total']);
+        $this->assertSame(8, $summary['disk_total']);
+        $this->assertSame(8, $summary['physical_disk_total']);
+        $this->assertSame(2, $summary['raid_disk_total']);
+        $this->assertGreaterThan(0, $summary['storage_total_bytes']);
+        $this->assertGreaterThan(0, $summary['storage_used_bytes']);
+        $this->assertNotEmpty($snapshot['notes']);
     }
 
     public function test_admin_can_filter_vault_entries_and_integrations_by_site_scope(): void

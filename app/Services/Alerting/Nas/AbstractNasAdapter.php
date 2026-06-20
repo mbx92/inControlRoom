@@ -60,19 +60,27 @@ abstract class AbstractNasAdapter implements NasVendorAdapter
         return [
             'volumes' => [],
             'disks' => [],
+            'physical_disks' => [],
+            'raid_disks' => [],
             'shares' => [],
             'services' => [],
+            'notes' => [],
         ];
     }
 
     protected function summarizeDefault(array $snapshot): array
     {
         $volumes = collect($snapshot['volumes'] ?? []);
-        $disks = collect($snapshot['disks'] ?? []);
+        $physicalDisks = collect($snapshot['physical_disks'] ?? []);
+        $raidDisks = collect($snapshot['raid_disks'] ?? []);
+        $disks = $physicalDisks->isNotEmpty() ? $physicalDisks : collect($snapshot['disks'] ?? []);
+        $raidDiskSource = $raidDisks->isNotEmpty() ? $raidDisks : $disks;
 
         return [
             'volume_total' => $volumes->count(),
             'disk_total' => $disks->count(),
+            'physical_disk_total' => $disks->count(),
+            'raid_disk_total' => $raidDiskSource->count(),
             'healthy_disk_total' => $disks->where('health', 'healthy')->count(),
             'degraded_disk_total' => $disks->filter(fn (array $disk) => ($disk['health'] ?? null) !== 'healthy')->count(),
             'storage_total_bytes' => $volumes->sum(fn (array $volume) => (int) ($volume['total_bytes'] ?? 0)),

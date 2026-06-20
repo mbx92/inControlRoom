@@ -26,37 +26,6 @@ function submit() {
     <div class="login-page">
         <div class="login-shell">
             <div class="login-grid">
-                <section class="login-hero panel-card">
-                    <div class="eyebrow">InfraControl</div>
-                    <h1 class="text-display-lg text-body mt-5 max-w-2xl">
-                        A control room should feel decisive before the first alert even lands.
-                    </h1>
-                    <div class="login-chip-row">
-                        <span class="status-chip">
-                            <span class="signal-dot signal-dot--live animate-pulse-dot" />
-                            Alert-aware shell
-                        </span>
-                        <span class="status-chip">Audit-first workflow</span>
-                        <span class="status-chip">Dense panel hierarchy</span>
-                    </div>
-
-                    <div class="login-stats">
-                        <div class="panel-subtle login-stat">
-                            <div class="text-caption text-muted">Primary Accent</div>
-                            <div class="text-number-md text-brand mt-2">#FCD535</div>
-                        </div>
-                        <div class="panel-subtle login-stat">
-                            <div class="text-caption text-muted">Numerical Voice</div>
-                            <div class="text-number-md text-body mt-2">IBM Plex Mono</div>
-                        </div>
-                        <div class="panel-subtle login-stat">
-                            <div class="text-caption text-muted">Surface Bias</div>
-                            <div class="text-number-md text-body mt-2">Dark Control Deck</div>
-                        </div>
-                    </div>
-
-                </section>
-
                 <section class="login-card panel-subtle">
                     <div>
                         <div class="eyebrow">Operator Access</div>
@@ -132,7 +101,12 @@ function submit() {
 
 <style scoped>
 .login-page {
+    position: relative;
+    overflow: hidden;
     min-height: 100vh;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
     padding: 32px;
     background:
         linear-gradient(var(--theme-login-grid) 1px, transparent 1px),
@@ -142,6 +116,8 @@ function submit() {
 }
 
 .login-shell {
+    position: relative;
+    z-index: 1;
     width: min(1360px, 100%);
     margin: 0 auto;
 }
@@ -149,37 +125,16 @@ function submit() {
 .login-grid {
     display: grid;
     gap: 24px;
-    grid-template-columns: minmax(0, 1.2fr) minmax(360px, 420px);
+    justify-content: center;
 }
 
-.login-hero,
 .login-card {
     position: relative;
+    width: min(420px, 100%);
     padding: 32px;
-}
-
-.login-card {
     display: flex;
     flex-direction: column;
     gap: 28px;
-}
-
-.login-chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 28px;
-}
-
-.login-stats {
-    display: grid;
-    gap: 14px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-top: 28px;
-}
-
-.login-stat {
-    padding: 16px;
 }
 
 .login-form {
@@ -203,12 +158,13 @@ function submit() {
 }
 
 @media (max-width: 960px) {
-    .login-page {
-        display: block;
+    .login-grid {
+        place-items: center;
     }
 
-    .login-grid {
-        grid-template-columns: minmax(0, 1fr);
+    .login-card {
+        max-width: 420px;
+        width: 100%;
     }
 }
 
@@ -217,13 +173,8 @@ function submit() {
         padding: 20px;
     }
 
-    .login-hero,
     .login-card {
         padding: 24px;
-    }
-
-    .login-stats {
-        grid-template-columns: minmax(0, 1fr);
     }
 }
 </style>

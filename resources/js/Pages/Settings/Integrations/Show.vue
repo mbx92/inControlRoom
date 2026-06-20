@@ -52,7 +52,7 @@ function testConnection() {
 
 function formatBytes(bytes) {
     if (bytes === null || bytes === undefined) {
-        return '—';
+        return '-';
     }
 
     const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
@@ -70,7 +70,7 @@ function formatBytes(bytes) {
 
 function formatPercent(value) {
     if (value === null || value === undefined) {
-        return '—';
+        return '-';
     }
 
     return `${Number(value).toFixed(value >= 10 ? 0 : 1)}%`;
@@ -78,7 +78,7 @@ function formatPercent(value) {
 
 function formatUptime(seconds) {
     if (!seconds) {
-        return '—';
+        return '-';
     }
 
     const totalMinutes = Math.floor(seconds / 60);
@@ -98,7 +98,7 @@ function formatUptime(seconds) {
 }
 
 function shortId(value) {
-    return value ? String(value).slice(0, 12) : '—';
+    return value ? String(value).slice(0, 12) : '-';
 }
 
 function activityBadgeClass(result) {
@@ -335,13 +335,13 @@ function goToPage(pageParam, page) {
 
                     <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
                         <div class="text-caption text-muted">Nodes</div>
-                        <div class="text-number-sm text-body mt-3">{{ integration.source_summary.node_count ?? '—' }}</div>
+                        <div class="text-number-sm text-body mt-3">{{ integration.source_summary.node_count ?? '-' }}</div>
                         <div class="text-caption text-muted mt-2">visible through API</div>
                     </article>
 
                     <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
                         <div class="text-caption text-muted">Users</div>
-                        <div class="text-number-sm text-body mt-3">{{ integration.source_summary.user_count ?? '—' }}</div>
+                        <div class="text-number-sm text-body mt-3">{{ integration.source_summary.user_count ?? '-' }}</div>
                         <div class="text-caption text-muted mt-2">fetched from control plane</div>
                     </article>
                 </div>
@@ -354,7 +354,7 @@ function goToPage(pageParam, page) {
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <article class="rounded-xl border border-hairline bg-base-300 px-4 py-4">
                         <div class="text-caption text-muted">Vendor</div>
-                        <div class="text-title-sm text-body mt-3">{{ integration.source_summary?.vendor ?? '—' }}</div>
+                        <div class="text-title-sm text-body mt-3">{{ integration.source_summary?.vendor ?? '-' }}</div>
                         <div class="text-caption text-muted mt-2">selected adapter</div>
                     </article>
 
@@ -449,7 +449,7 @@ function goToPage(pageParam, page) {
                             <div v-if="integration.type === 'nas'">
                                 <div class="text-caption text-muted">Vendor Adapter</div>
                                 <div class="text-body-sm text-body mt-2">
-                                    {{ integration.config?.vendor ?? '—' }}
+                                    {{ integration.config?.vendor ?? '-' }}
                                 </div>
                             </div>
 
@@ -459,6 +459,41 @@ function goToPage(pageParam, page) {
                                     Username in config, password via vault
                                 </div>
                             </div>
+                        </div>
+                        <div v-if="(nasSnapshot.raid_disks?.length ?? 0) > 0" class="mt-6 overflow-x-auto">
+                            <div class="mb-3 text-caption text-muted">RAID Member Disks</div>
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="border-hairline">
+                                        <th>Disk</th>
+                                        <th>Health</th>
+                                        <th>Slot</th>
+                                        <th>Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="disk in nasSnapshot.raid_disks"
+                                        :key="`raid-${disk.id}`"
+                                        class="border-hairline transition-default hover:bg-elevated/30"
+                                    >
+                                        <td class="text-body-sm text-body">{{ disk.name }}</td>
+                                        <td>
+                                            <span class="status-chip">
+                                                <span
+                                                    class="signal-dot"
+                                                    :class="disk.health === 'healthy' ? 'signal-dot--live' : 'signal-dot--warning'"
+                                                />
+                                                {{ disk.health ?? 'unknown' }}
+                                            </span>
+                                        </td>
+                                        <td class="text-body-sm text-body">{{ disk.slot ?? '-' }}</td>
+                                        <td class="text-body-sm text-muted">
+                                            {{ disk.raw?.sources?.join(', ') ?? '-' }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </section>
 
@@ -491,14 +526,14 @@ function goToPage(pageParam, page) {
                             <div>
                                 <div class="text-caption text-muted">Latency</div>
                                 <div class="text-body-sm text-body mt-2">
-                                    {{ integration.api_health?.latency_ms !== null ? `${integration.api_health.latency_ms} ms` : '—' }}
+                                    {{ integration.api_health?.latency_ms !== null ? `${integration.api_health.latency_ms} ms` : '-' }}
                                 </div>
                             </div>
 
                             <div>
                                 <div class="text-caption text-muted">HTTP Status</div>
                                 <div class="text-body-sm text-body mt-2">
-                                    {{ integration.api_health?.http_status ?? '—' }}
+                                    {{ integration.api_health?.http_status ?? '-' }}
                                 </div>
                             </div>
 
@@ -519,7 +554,7 @@ function goToPage(pageParam, page) {
                             <div>
                                 <div class="text-caption text-muted">API Version</div>
                                 <div class="text-body-sm text-body mt-2">
-                                    {{ integration.api_health?.version ?? '—' }}
+                                    {{ integration.api_health?.version ?? '-' }}
                                 </div>
                             </div>
                         </div>
@@ -533,36 +568,36 @@ function goToPage(pageParam, page) {
                         <div class="mt-4 text-title-sm text-body">
                             {{ integration.source_summary.headline }}
                             <span v-if="integration.source_summary.release" class="text-muted">
-                                · {{ integration.source_summary.release }}
+                                Â· {{ integration.source_summary.release }}
                             </span>
                         </div>
 
-                        <div class="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                        <div class="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-6">
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Nodes</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.node_count ?? '—' }}
+                                    {{ integration.source_summary.node_count ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">VM</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.vm_count ?? '—' }}
+                                    {{ integration.source_summary.vm_count ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">CT</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.ct_count ?? '—' }}
+                                    {{ integration.source_summary.ct_count ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Repo ID</div>
                                 <div class="text-body-sm text-body mt-2 font-mono-num">
-                                    {{ integration.source_summary.repoid ?? '—' }}
+                                    {{ integration.source_summary.repoid ?? '-' }}
                                 </div>
                             </div>
                         </div>
@@ -581,28 +616,28 @@ function goToPage(pageParam, page) {
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">API Version</div>
                                 <div class="text-body-sm text-body mt-2 font-mono-num">
-                                    {{ integration.source_summary.api_version ?? '—' }}
+                                    {{ integration.source_summary.api_version ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Containers</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.container_count ?? '—' }}
+                                    {{ integration.source_summary.container_count ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Running</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.running_count ?? '—' }}
+                                    {{ integration.source_summary.running_count ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Stopped</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.stopped_count ?? '—' }}
+                                    {{ integration.source_summary.stopped_count ?? '-' }}
                                 </div>
                             </div>
                         </div>
@@ -621,21 +656,21 @@ function goToPage(pageParam, page) {
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Firmware</div>
                                 <div class="text-body-sm text-body mt-2 font-mono-num">
-                                    {{ integration.source_summary.firmware ?? '—' }}
+                                    {{ integration.source_summary.firmware ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Channels</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.channel_count ?? '—' }}
+                                    {{ integration.source_summary.channel_count ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Recording</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.recording_count ?? '—' }}
+                                    {{ integration.source_summary.recording_count ?? '-' }}
                                 </div>
                             </div>
 
@@ -661,14 +696,14 @@ function goToPage(pageParam, page) {
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Nodes</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.node_count ?? '—' }}
+                                    {{ integration.source_summary.node_count ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Users</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.user_count ?? '—' }}
+                                    {{ integration.source_summary.user_count ?? '-' }}
                                 </div>
                             </div>
 
@@ -697,25 +732,37 @@ function goToPage(pageParam, page) {
                             {{ integration.source_summary.headline }}
                         </div>
 
-                        <div class="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                        <div class="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-6">
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Vendor</div>
                                 <div class="text-body-sm text-body mt-2">
-                                    {{ integration.source_summary.vendor ?? '—' }}
+                                    {{ integration.source_summary.vendor ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Volumes</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.volume_count ?? '—' }}
+                                    {{ integration.source_summary.volume_count ?? '-' }}
                                 </div>
                             </div>
 
                             <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
                                 <div class="text-caption text-muted">Disks</div>
                                 <div class="text-number-sm text-body mt-2">
-                                    {{ integration.source_summary.disk_count ?? '—' }}
+                                    {{ integration.source_summary.disk_count ?? '-' }}
+                                </div>
+                            </div>
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">Physical</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.physical_disk_count ?? integration.source_summary.disk_count ?? '-' }}
+                                </div>
+                            </div>
+                            <div class="rounded-lg border border-hairline bg-base-300 px-4 py-4">
+                                <div class="text-caption text-muted">RAID Members</div>
+                                <div class="text-number-sm text-body mt-2">
+                                    {{ integration.source_summary.raid_disk_count ?? integration.source_summary.disk_count ?? '-' }}
                                 </div>
                             </div>
 
@@ -729,7 +776,7 @@ function goToPage(pageParam, page) {
                     </section>
 
                     <section
-                        v-if="integration.type === 'nas' && nasSnapshot && ((nasSnapshot.volumes?.length ?? 0) > 0 || (nasSnapshot.disks?.length ?? 0) > 0)"
+                        v-if="integration.type === 'nas' && nasSnapshot && ((nasSnapshot.volumes?.length ?? 0) > 0 || (nasSnapshot.physical_disks?.length ?? nasSnapshot.disks?.length ?? 0) > 0 || (nasSnapshot.raid_disks?.length ?? 0) > 0 || (nasSnapshot.notes?.length ?? 0) > 0)"
                         class="panel-card p-6"
                     >
                         <div class="flex items-center justify-between gap-4">
@@ -739,7 +786,23 @@ function goToPage(pageParam, page) {
                             </div>
 
                             <div class="status-chip">
-                                {{ (nasSnapshot.volumes?.length ?? 0) + (nasSnapshot.disks?.length ?? 0) }} records
+                                {{ (nasSnapshot.volumes?.length ?? 0) + (nasSnapshot.physical_disks?.length ?? nasSnapshot.disks?.length ?? 0) + (nasSnapshot.raid_disks?.length ?? 0) }} records
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="(nasSnapshot.notes?.length ?? 0) > 0"
+                            class="mt-6 rounded-lg border border-hairline bg-base-300 px-4 py-4"
+                        >
+                            <div class="text-caption text-muted">Notes</div>
+                            <div class="mt-3 space-y-2">
+                                <div
+                                    v-for="(note, index) in nasSnapshot.notes"
+                                    :key="`nas-note-${index}`"
+                                    class="text-body-sm text-body"
+                                >
+                                    {{ note }}
+                                </div>
                             </div>
                         </div>
 
@@ -768,7 +831,8 @@ function goToPage(pageParam, page) {
                             </table>
                         </div>
 
-                        <div v-if="(nasSnapshot.disks?.length ?? 0) > 0" class="mt-6 overflow-x-auto">
+                        <div v-if="(nasSnapshot.physical_disks?.length ?? nasSnapshot.disks?.length ?? 0) > 0" class="mt-6 overflow-x-auto">
+                            <div class="mb-3 text-caption text-muted">Physical Disks</div>
                             <table class="table table-sm">
                                 <thead>
                                     <tr class="border-hairline">
@@ -777,18 +841,19 @@ function goToPage(pageParam, page) {
                                         <th>Model</th>
                                         <th>Capacity</th>
                                         <th>Temp</th>
+                                        <th>Source</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr
-                                        v-for="disk in nasSnapshot.disks"
+                                        v-for="disk in (nasSnapshot.physical_disks?.length ? nasSnapshot.physical_disks : nasSnapshot.disks)"
                                         :key="disk.id"
                                         class="border-hairline transition-default hover:bg-elevated/30"
                                     >
                                         <td>
                                             <div class="text-body-sm text-body">{{ disk.name }}</div>
                                             <div class="text-caption text-muted mt-1">
-                                                Slot {{ disk.slot ?? '—' }}<span v-if="disk.serial"> / {{ disk.serial }}</span>
+                                                Slot {{ disk.slot ?? '-' }}<span v-if="disk.serial"> / {{ disk.serial }}</span>
                                             </div>
                                         </td>
                                         <td>
@@ -800,10 +865,48 @@ function goToPage(pageParam, page) {
                                                 {{ disk.health ?? 'unknown' }}
                                             </span>
                                         </td>
-                                        <td class="text-body-sm text-body">{{ disk.model ?? '—' }}</td>
+                                        <td class="text-body-sm text-body">{{ disk.model ?? '-' }}</td>
                                         <td class="text-body-sm text-body">{{ formatBytes(disk.total_bytes) }}</td>
                                         <td class="text-body-sm text-body">
-                                            {{ disk.temperature_c ? `${disk.temperature_c}°C` : '—' }}
+                                            {{ disk.temperature_c ? `${disk.temperature_c} C` : '-' }}
+                                        </td>
+                                        <td class="text-body-sm text-muted">
+                                            {{ disk.raw?.sources?.join(', ') ?? '-' }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div v-if="(nasSnapshot.raid_disks?.length ?? 0) > 0" class="mt-6 overflow-x-auto">
+                            <div class="mb-3 text-caption text-muted">RAID Member Disks</div>
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr class="border-hairline">
+                                        <th>Disk</th>
+                                        <th>Health</th>
+                                        <th>Slot</th>
+                                        <th>Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="disk in nasSnapshot.raid_disks"
+                                        :key="`raid-${disk.id}`"
+                                        class="border-hairline transition-default hover:bg-elevated/30"
+                                    >
+                                        <td class="text-body-sm text-body">{{ disk.name }}</td>
+                                        <td>
+                                            <span class="status-chip">
+                                                <span
+                                                    class="signal-dot"
+                                                    :class="disk.health === 'healthy' ? 'signal-dot--live' : 'signal-dot--warning'"
+                                                />
+                                                {{ disk.health ?? 'unknown' }}
+                                            </span>
+                                        </td>
+                                        <td class="text-body-sm text-body">{{ disk.slot ?? '-' }}</td>
+                                        <td class="text-body-sm text-muted">
+                                            {{ disk.raw?.sources?.join(', ') ?? '-' }}
                                         </td>
                                     </tr>
                                 </tbody>
@@ -870,7 +973,7 @@ function goToPage(pageParam, page) {
                                         <td class="text-body-sm text-body">
                                             <div>{{ formatPercent(guest.cpu_usage_percent) }}</div>
                                             <div class="text-caption text-muted mt-1">
-                                                {{ guest.cpu_cores ?? '—' }} cores
+                                                {{ guest.cpu_cores ?? '-' }} cores
                                             </div>
                                         </td>
                                         <td class="text-body-sm text-body">
@@ -935,7 +1038,7 @@ function goToPage(pageParam, page) {
                                                 {{ container.name }}
                                             </div>
                                             <div class="text-caption text-muted mt-1">
-                                                {{ shortId(container.id) }} / {{ container.image ?? '—' }}
+                                                {{ shortId(container.id) }} / {{ container.image ?? '-' }}
                                             </div>
                                         </td>
                                         <td>
@@ -960,7 +1063,7 @@ function goToPage(pageParam, page) {
                                             </div>
                                         </td>
                                         <td class="text-body-sm text-body">
-                                            {{ container.restart_count !== null ? container.restart_count : '—' }}
+                                            {{ container.restart_count !== null ? container.restart_count : '-' }}
                                         </td>
                                     </tr>
                                 </tbody>
@@ -1025,10 +1128,10 @@ function goToPage(pageParam, page) {
                                             </span>
                                         </td>
                                         <td class="text-body-sm text-body font-mono-num">
-                                            {{ channel.video_resolution ?? '—' }}
+                                            {{ channel.video_resolution ?? '-' }}
                                         </td>
                                         <td class="text-body-sm text-body">
-                                            {{ channel.video_codec ?? '—' }}
+                                            {{ channel.video_codec ?? '-' }}
                                         </td>
                                     </tr>
                                 </tbody>
@@ -1091,7 +1194,7 @@ function goToPage(pageParam, page) {
                                             <td class="text-caption text-muted">
                                                 <span v-if="entry.node">{{ entry.node }}</span>
                                                 <span v-if="entry.target"> / {{ entry.target }}</span>
-                                                <span v-if="!entry.node && !entry.target">—</span>
+                                                <span v-if="!entry.node && !entry.target">-</span>
                                             </td>
                                             <td>
                                                 <span class="badge badge-sm" :class="activityBadgeClass(entry.result)">
@@ -1174,7 +1277,7 @@ function goToPage(pageParam, page) {
                                             <td class="text-body-sm text-body">{{ entry.node }}</td>
                                             <td class="text-caption text-muted font-mono-num">{{ entry.tag }}</td>
                                             <td class="text-body-sm text-body">
-                                                <div>{{ entry.message || entry.raw || '—' }}</div>
+                                                <div>{{ entry.message || entry.raw || '-' }}</div>
                                                 <div
                                                     v-if="entry.raw && entry.message && entry.raw !== entry.message"
                                                     class="mt-2 text-caption text-muted break-all"
@@ -1248,7 +1351,7 @@ function goToPage(pageParam, page) {
                                 <div>
                                     <div class="text-caption text-muted">Latency</div>
                                     <div class="text-body-sm text-body mt-2">
-                                        {{ integration.api_health?.latency_ms !== null ? `${integration.api_health.latency_ms} ms` : '—' }}
+                                        {{ integration.api_health?.latency_ms !== null ? `${integration.api_health.latency_ms} ms` : '-' }}
                                     </div>
                                 </div>
                             </div>
@@ -1256,14 +1359,14 @@ function goToPage(pageParam, page) {
                             <div class="data-list__row">
                                 <div>
                                     <div class="text-caption text-muted">Created</div>
-                                    <div class="text-body-sm text-body mt-2">{{ integration.created_at ?? '—' }}</div>
+                                    <div class="text-body-sm text-body mt-2">{{ integration.created_at ?? '-' }}</div>
                                 </div>
                             </div>
 
                             <div class="data-list__row">
                                 <div>
                                     <div class="text-caption text-muted">Updated</div>
-                                    <div class="text-body-sm text-body mt-2">{{ integration.updated_at ?? '—' }}</div>
+                                    <div class="text-body-sm text-body mt-2">{{ integration.updated_at ?? '-' }}</div>
                                 </div>
                             </div>
                         </div>
@@ -1273,3 +1376,4 @@ function goToPage(pageParam, page) {
         </div>
     </AppLayout>
 </template>
+

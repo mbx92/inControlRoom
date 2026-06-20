@@ -151,6 +151,11 @@ class VaultEntryController extends Controller
     public function reveal(Request $request, VaultEntry $vault)
     {
         $this->authorizeSiteAccess($vault->site_id);
+
+        $request->validate([
+            'password' => ['required', 'string', 'current_password'],
+        ]);
+
         $this->recordVaultAction($request, $vault, 'reveal');
 
         return redirect()->route('vault.show', $vault)

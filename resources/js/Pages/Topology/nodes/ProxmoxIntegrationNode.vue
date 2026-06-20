@@ -23,6 +23,7 @@ defineProps({
             <div class="node-proxmox-int__label">{{ data.label }}</div>
             <div class="node-proxmox-int__sub">{{ data.subtitle }}</div>
             <div v-if="data.hostAssetName" class="node-proxmox-int__host">on {{ data.hostAssetName }}</div>
+            <div v-else-if="data.integrationHost" class="node-proxmox-int__host">{{ data.integrationHost }}</div>
         </div>
     </div>
 </template>

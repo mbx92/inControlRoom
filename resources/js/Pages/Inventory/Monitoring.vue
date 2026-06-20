@@ -263,6 +263,22 @@ function checkNow(assetId) {
                         </tbody>
                     </table>
                 </div>
+
+                <div v-if="assets.links && assets.links.length > 3" class="border-t border-hairline px-5 py-4">
+                    <div class="flex flex-wrap gap-1">
+                        <template v-for="link in assets.links" :key="link.label">
+                            <Link
+                                v-if="link.url"
+                                :href="link.url"
+                                class="btn btn-sm"
+                                :class="link.active ? 'btn-primary' : 'btn-ghost'"
+                                v-html="link.label"
+                                preserve-state
+                            />
+                            <span v-else class="btn btn-sm btn-disabled btn-ghost" v-html="link.label" />
+                        </template>
+                    </div>
+                </div>
             </section>
         </div>
     </AppLayout>

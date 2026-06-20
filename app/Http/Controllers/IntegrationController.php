@@ -367,9 +367,12 @@ class IntegrationController extends Controller
                 'vendor' => Integration::NAS_VENDORS[$integration->config['vendor'] ?? ''] ?? ($sourceSummary['vendor'] ?? null),
                 'volume_count' => $nasSummary['volume_total'] ?? ($sourceSummary['volume_count'] ?? null),
                 'disk_count' => $nasSummary['disk_total'] ?? ($sourceSummary['disk_count'] ?? null),
+                'physical_disk_count' => $nasSummary['physical_disk_total'] ?? ($sourceSummary['physical_disk_count'] ?? null),
+                'raid_disk_count' => $nasSummary['raid_disk_total'] ?? ($sourceSummary['raid_disk_count'] ?? null),
                 'storage_total_bytes' => $nasSummary['storage_total_bytes'] ?? ($sourceSummary['storage_total_bytes'] ?? null),
                 'storage_used_bytes' => $nasSummary['storage_used_bytes'] ?? ($sourceSummary['storage_used_bytes'] ?? null),
                 'verify_ssl' => $integration->config['verify_ssl'] ?? ($sourceSummary['verify_ssl'] ?? null),
+                'notes' => $nasSnapshot['notes'] ?? ($sourceSummary['notes'] ?? []),
             ];
         }
 

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PageHeader from '@/Components/PageHeader.vue';
@@ -13,6 +13,11 @@ const props = defineProps({
 });
 
 const isRevealed = ref(props.revealedSecret !== null);
+const showPasswordModal = ref(false);
+const revealPassword = ref('');
+const revealError = ref('');
+const revealSubmitting = ref(false);
+const passwordInputRef = ref(null);
 
 const displayedSecret = computed(() => (
     isRevealed.value && props.revealedSecret !== null
@@ -20,7 +25,29 @@ const displayedSecret = computed(() => (
         : props.entry.masked_preview
 ));
 
-function toggleSecret() {
+watch(
+    () => props.revealedSecret,
+    (secret) => {
+        if (secret !== null) {
+            isRevealed.value = true;
+        }
+    },
+);
+
+watch(showPasswordModal, async (visible) => {
+    document.body.style.overflow = visible ? 'hidden' : '';
+
+    if (visible) {
+        await nextTick();
+        passwordInputRef.value?.focus();
+    }
+});
+
+onBeforeUnmount(() => {
+    document.body.style.overflow = '';
+});
+
+function openReveal() {
     if (isRevealed.value) {
         isRevealed.value = false;
         return;
@@ -31,8 +58,52 @@ function toggleSecret() {
         return;
     }
 
-    router.post(route('vault.reveal', props.entry.id), {}, {
+    showPasswordModal.value = true;
+    revealPassword.value = '';
+    revealError.value = '';
+}
+
+function closeRevealModal(force = false) {
+    if (revealSubmitting.value && !force) {
+        return;
+    }
+
+    showPasswordModal.value = false;
+    revealPassword.value = '';
+    revealError.value = '';
+}
+
+function formatRevealError(error) {
+    if (Array.isArray(error)) {
+        return error[0];
+    }
+
+    return error ?? 'Incorrect password.';
+}
+
+function submitReveal() {
+    if (!revealPassword.value) {
+        revealError.value = 'Password is required.';
+        return;
+    }
+
+    revealError.value = '';
+    revealSubmitting.value = true;
+
+    router.post(route('vault.reveal', props.entry.id), {
+        password: revealPassword.value,
+    }, {
         preserveScroll: true,
+        onSuccess: () => {
+            closeRevealModal(true);
+            isRevealed.value = true;
+        },
+        onError: (errors) => {
+            revealError.value = formatRevealError(errors.password);
+        },
+        onFinish: () => {
+            revealSubmitting.value = false;
+        },
     });
 }
 </script>
@@ -58,7 +129,7 @@ function toggleSecret() {
                 <Link :href="route('vault.index')" class="btn btn-ghost">
                     Back
                 </Link>
-                <button v-if="permissions.can_execute" type="button" class="btn btn-secondary" @click="toggleSecret">
+                <button v-if="permissions.can_execute" type="button" class="btn btn-secondary" @click="openReveal">
                     {{ isRevealed ? 'Hide Secret' : 'Reveal Secret' }}
                 </button>
                 <Link v-if="permissions.is_admin" :href="route('vault.edit', entry.id)" class="btn btn-primary">
@@ -198,5 +269,106 @@ function toggleSecret() {
                 </aside>
             </div>
         </div>
+
+        <!-- Password verification modal -->
+        <Teleport to="body">
+            <div
+                v-if="showPasswordModal"
+                class="vault-reveal-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="vault-reveal-title"
+                @keydown.escape="closeRevealModal"
+            >
+                <div class="vault-reveal-modal__backdrop" @click="closeRevealModal" />
+
+                <div class="vault-reveal-modal__panel panel-card p-6">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <div class="eyebrow">Security Check</div>
+                            <h3 id="vault-reveal-title" class="text-title-md text-body mt-2">Confirm Identity</h3>
+                        </div>
+
+                        <button
+                            type="button"
+                            class="btn btn-ghost btn-sm"
+                            :disabled="revealSubmitting"
+                            @click="closeRevealModal"
+                        >
+                            Close
+                        </button>
+                    </div>
+
+                    <p class="text-body-sm text-muted mt-4">
+                        Enter your account password to reveal the secret for
+                        <span class="text-body font-medium">{{ entry.name }}</span>.
+                        This action will be recorded in the audit trail.
+                    </p>
+
+                    <form class="mt-6 space-y-4" @submit.prevent="submitReveal">
+                        <div>
+                            <label class="form-label" for="reveal-password">Your Password</label>
+                            <input
+                                id="reveal-password"
+                                ref="passwordInputRef"
+                                v-model="revealPassword"
+                                type="password"
+                                class="input mt-2 w-full"
+                                :class="{ 'input-error': revealError }"
+                                placeholder="Enter your account password"
+                                autocomplete="current-password"
+                                :disabled="revealSubmitting"
+                            />
+                            <p v-if="revealError" class="form-error mt-2">{{ revealError }}</p>
+                        </div>
+
+                        <div class="flex flex-wrap justify-end gap-3 pt-2">
+                            <button
+                                type="button"
+                                class="btn btn-ghost"
+                                :disabled="revealSubmitting"
+                                @click="closeRevealModal"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                class="btn btn-primary"
+                                :disabled="revealSubmitting"
+                            >
+                                <span v-if="revealSubmitting" class="loading loading-spinner loading-xs"></span>
+                                {{ revealSubmitting ? 'Verifying...' : 'Reveal Secret' }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </Teleport>
     </AppLayout>
 </template>
+
+<style scoped>
+.vault-reveal-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+.vault-reveal-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgb(2 6 23 / 0.72);
+    backdrop-filter: blur(6px);
+}
+
+.vault-reveal-modal__panel {
+    position: relative;
+    width: min(100%, 480px);
+    max-height: calc(100vh - 3rem);
+    overflow: auto;
+}
+</style>

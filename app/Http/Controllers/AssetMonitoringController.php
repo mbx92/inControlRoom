@@ -24,6 +24,18 @@ class AssetMonitoringController extends Controller
             ->where('primary_ip', '!=', '')
             ->orderBy('name');
 
+        $this->applySiteScope($query);
+        $this->applyRequestedSiteFilter($query, $request->query('site'), nullFilterValue: 'unassigned');
+
+        // Stats are always computed from the base query (before search/status filters)
+        // so the card numbers stay stable while the user narrows the table.
+        $statsQuery = clone $query;
+        $statsAssets = $statsQuery->get([
+            'id',
+            'reachability_status',
+            'reachability_fail_count',
+        ]);
+
         if ($request->filled('search')) {
             $search = trim($request->string('search')->toString());
             $operator = $this->caseInsensitiveLikeOperator();
@@ -52,16 +64,6 @@ class AssetMonitoringController extends Controller
                 $query->where('reachability_status', $status);
             }
         }
-
-        $this->applySiteScope($query);
-        $this->applyRequestedSiteFilter($query, $request->query('site'), nullFilterValue: 'unassigned');
-
-        $statsQuery = clone $query;
-        $statsAssets = $statsQuery->get([
-            'id',
-            'reachability_status',
-            'reachability_fail_count',
-        ]);
 
         $assets = $query
             ->paginate(25)

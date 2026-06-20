@@ -322,6 +322,8 @@ class TopologyController extends Controller
                 'siteColor' => $siteColor,
                 'layer' => 'virtual',
                 'hostAssetName' => $hostAsset?->name,
+                'hostNodeId' => $hostAsset ? 'asset:'.$hostAsset->id : null,
+                'integrationHost' => $this->extractIntegrationHost($proxmoxIntegration),
             ],
         ];
 
@@ -658,6 +660,8 @@ class TopologyController extends Controller
                     'siteColor' => $siteColor,
                     'layer' => 'virtual',
                     'hostAssetName' => $hostAsset?->name,
+                    'hostNodeId' => $hostAsset ? 'asset:'.$hostAsset->id : null,
+                    'integrationHost' => $this->extractIntegrationHost($integration),
                 ],
             ];
 
@@ -788,6 +792,8 @@ class TopologyController extends Controller
                     'siteColor' => $siteColor,
                     'layer' => 'virtual',
                     'hostAssetName' => $hostAsset?->name,
+                    'hostNodeId' => $hostAsset ? 'asset:'.$hostAsset->id : null,
+                    'integrationHost' => $this->extractIntegrationHost($integration),
                 ],
             ];
 
@@ -903,43 +909,65 @@ class TopologyController extends Controller
             }
         }
 
-        $host = parse_url($integration->base_url, PHP_URL_HOST);
+        $host = $this->extractIntegrationHost($integration);
 
         if (! $host) {
             return null;
         }
 
-        $host = strtolower($host);
+        return $assets->first(
+            fn (InventoryAsset $asset) => $this->assetMatchesIntegrationHost($asset, $host),
+        );
+    }
 
-        $matchedByHost = $assets->first(function (InventoryAsset $asset) use ($host) {
-            if ($asset->primary_ip && strtolower($asset->primary_ip) === $host) {
-                return true;
-            }
+    private function extractIntegrationHost(Integration $integration): ?string
+    {
+        $baseUrl = trim((string) $integration->base_url);
 
-            $customFields = $asset->custom_fields ?? [];
-
-            foreach (['proxmox_host', 'hostname', 'fqdn'] as $key) {
-                if (! empty($customFields[$key]) && strtolower((string) $customFields[$key]) === $host) {
-                    return true;
-                }
-            }
-
-            return false;
-        });
-
-        if ($matchedByHost) {
-            return $matchedByHost;
+        if ($baseUrl === '') {
+            return null;
         }
 
-        $hypervisors = $assets->filter(
-            fn (InventoryAsset $asset) => in_array(strtolower($asset->category), ['hypervisor', 'server'], true),
-        );
+        if (! str_contains($baseUrl, '://')) {
+            $baseUrl = 'https://'.$baseUrl;
+        }
 
-        if ($hypervisors->count() === 1) {
-            return $hypervisors->first();
+        $host = parse_url($baseUrl, PHP_URL_HOST);
+
+        if (is_string($host) && $host !== '') {
+            return strtolower($host);
+        }
+
+        $candidate = preg_replace('#/.*$#', '', $baseUrl);
+        $candidate = preg_replace('#^https?://#i', '', (string) $candidate);
+
+        if (preg_match('#^([^:/]+)#', $candidate, $matches)) {
+            return strtolower($matches[1]);
         }
 
         return null;
+    }
+
+    private function assetMatchesIntegrationHost(InventoryAsset $asset, string $host): bool
+    {
+        if ($asset->primary_ip && $this->hostsEqual($asset->primary_ip, $host)) {
+            return true;
+        }
+
+        $customFields = $asset->custom_fields ?? [];
+
+        foreach (['proxmox_host', 'hostname', 'fqdn', 'management_ip', 'api_ip'] as $key) {
+            if (! empty($customFields[$key]) && $this->hostsEqual((string) $customFields[$key], $host)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function hostsEqual(string $left, string $right): bool
+    {
+        return strtolower(trim($left)) === strtolower(trim($right));
     }
 
     private function fetchProxmoxGuestsForTopology(Integration $integration): array
@@ -1124,8 +1152,11 @@ class TopologyController extends Controller
             'storage' => 'storage',
             'firewall' => 'firewall',
             'switch' => 'switch',
+            'switch poe' => 'switch',
             'router' => 'router',
             'access point' => 'ap',
+            'ip camera' => 'camera',
+            'nvr' => 'nvr',
             'ups' => 'ups',
             'pdu' => 'pdu',
             default => 'device',
@@ -1151,10 +1182,12 @@ class TopologyController extends Controller
             str_contains($name, 'edge') && $category === 'router' => 'edge-router',
             $category === 'router' => 'router',
             $category === 'switch' => 'switch',
+            $category === 'switch poe' => 'switch',
             $category === 'hypervisor' => 'hypervisor',
             $category === 'server' => 'server',
             $category === 'nas' => 'nas',
             $category === 'nvr' => 'nvr',
+            $category === 'ip camera' => 'camera',
             $category === 'cctv' => 'cctv',
             $category === 'access door' => 'access-door',
             $category === 'access point' => 'access-point',
