@@ -26,6 +26,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('inventory:probe-reachability')->everyFiveMinutes()->withoutOverlapping();
     })
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->trustProxies(at: '*');
+
         $middleware->web(prepend: [
             FixViteHotFile::class,
         ]);

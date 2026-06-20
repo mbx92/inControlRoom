@@ -106,6 +106,8 @@ VITE_SENTRY_RELEASE=${SENTRY_RELEASE}
 VITE_SENTRY_ENABLED=true
 ```
 
+**Penting:** `APP_URL` harus `https://` jika situs diakses via Cloudflare Tunnel / SSL. Kalau masih `http://`, login Inertia akan kena mixed content error di browser.
+
 ## Domain dan Terminal Proxy
 
 Gunakan domain terpisah untuk terminal proxy. Konfigurasi yang direkomendasikan:
