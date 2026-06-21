@@ -372,6 +372,31 @@ function triggerFrontendTestError() {
             <hr v-if="isAdmin" class="border-border" />
 
             <section v-if="isAdmin">
+                <div class="eyebrow">Agent</div>
+                <h2 class="text-title-lg text-body mt-3">Client Distribution Pack</h2>
+                <p class="text-body-sm text-muted mt-2 mb-6">
+                    Generate enrollment token, pantau agent yang sudah register, dan unduh dokumen rekomendasi distribusi untuk client.
+                </p>
+
+                <div class="panel-card p-5">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div class="max-w-3xl">
+                            <div class="text-title-sm text-body">InfraControl Agent Enrollment</div>
+                            <p class="text-body-sm text-muted mt-2">
+                                Kelola enrollment token per site dan pantau device yang sudah berhasil enroll dari satu tempat.
+                            </p>
+                        </div>
+
+                        <Link :href="route('settings.agents.index')" class="btn btn-primary">
+                            Open Agent Enrollment
+                        </Link>
+                    </div>
+                </div>
+            </section>
+
+            <hr v-if="isAdmin" class="border-border" />
+
+            <section v-if="isAdmin">
                 <div class="eyebrow">Inventory</div>
                 <h2 class="text-title-lg text-body mt-3">Excel Import</h2>
                 <p class="text-body-sm text-muted mt-2 mb-6">

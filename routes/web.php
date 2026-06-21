@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AlertRuleController;
+use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AssetMonitoringController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\LoginController;
@@ -195,7 +196,12 @@ Route::middleware(['auth', 'site-scope', 'app-maintenance'])->group(function () 
             ->name('settings.glitchtip.test');
         Route::get('/settings/glitchtip/csp-test', [SettingsController::class, 'glitchtipCspTestPage'])
             ->name('settings.glitchtip.csp-test');
-
+        Route::get('/settings/agents', [AgentController::class, 'index'])
+            ->name('settings.agents.index');
+        Route::post('/settings/agents/enrollment-tokens', [AgentController::class, 'storeToken'])
+            ->name('settings.agents.tokens.store');
+        Route::post('/settings/agents/enrollment-tokens/{agentEnrollmentToken}/revoke', [AgentController::class, 'revokeToken'])
+            ->name('settings.agents.tokens.revoke');
         Route::prefix('settings/print-smb')->name('print-smb.')->group(function () {
             Route::get('/create', [LabelPrinterController::class, 'create'])->name('create');
             Route::post('/', [LabelPrinterController::class, 'store'])->name('store');
