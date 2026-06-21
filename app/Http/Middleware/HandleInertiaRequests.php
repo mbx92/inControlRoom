@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\MaintenanceMode;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -59,6 +60,7 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+            'maintenance' => fn () => MaintenanceMode::publicPayload(),
         ];
     }
 }

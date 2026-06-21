@@ -9,6 +9,10 @@ const user = computed(() => page.props.auth.user);
 
 const isAdmin = computed(() => user.value?.role === 'admin');
 
+const maintenance = computed(() => page.props.maintenance ?? { enabled: false });
+
+const showMaintenanceBanner = computed(() => isAdmin.value && maintenance.value.enabled);
+
 const allNavItems = [
     {
         name: 'Dashboard',
@@ -339,6 +343,23 @@ function logout() {
                 </header>
 
                 <FlashMessage />
+
+                <div
+                    v-if="showMaintenanceBanner"
+                    class="mx-4 mt-4 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 lg:mx-6"
+                >
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <div class="text-caption text-warning">Maintenance Mode Active</div>
+                            <p class="text-body-sm text-body mt-1">
+                                {{ maintenance.message || 'Non-admin users are blocked from the system.' }}
+                            </p>
+                        </div>
+                        <Link :href="route('settings.index')" class="btn btn-ghost btn-sm">
+                            Manage
+                        </Link>
+                    </div>
+                </div>
 
                 <main class="workspace w-full">
                     <slot />

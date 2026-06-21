@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnforceSiteScope;
 use App\Http\Middleware\FixViteHotFile;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\PreventMaintenanceAccess;
 use App\Http\Middleware\ReportCspViolations;
 use App\Http\Middleware\RoleMiddleware;
 use Illuminate\Console\Scheduling\Schedule;
@@ -38,6 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => RoleMiddleware::class,
             'site-scope' => EnforceSiteScope::class,
+            'app-maintenance' => PreventMaintenanceAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -54,12 +56,42 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (HttpException $e, Request $request) {
-            if ($e->getStatusCode() !== 403) {
+            $statusCode = $e->getStatusCode();
+
+            if ($statusCode === 403) {
+                return inertia('Errors/Forbidden', [
+                    'message' => $e->getMessage() ?: 'You do not have access to this resource.',
+                ])->toResponse($request)->setStatusCode(403);
+            }
+
+            if ($statusCode !== 503) {
                 return null;
             }
 
-            return inertia('Errors/Forbidden', [
-                'message' => $e->getMessage() ?: 'You do not have access to this resource.',
-            ])->toResponse($request)->setStatusCode(403);
+            $message = $e->getMessage() ?: 'InfraControl sedang tidak tersedia sementara. Tim IT sedang melakukan maintenance atau recovery.';
+            $retryAfter = $e->getHeaders()['Retry-After'] ?? null;
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $message,
+                    'retry_after' => $retryAfter,
+                ], 503)->withHeaders(array_filter([
+                    'Retry-After' => $retryAfter,
+                ]));
+            }
+
+            if ($request->header('X-Inertia')) {
+                return inertia('Errors/ServiceUnavailable', [
+                    'message' => $message,
+                    'retryAfter' => $retryAfter,
+                ])->toResponse($request)->setStatusCode(503);
+            }
+
+            return response()->view('errors.503', [
+                'message' => $message,
+                'retryAfter' => $retryAfter,
+            ], 503)->withHeaders(array_filter([
+                'Retry-After' => $retryAfter,
+            ]));
         });
     })->create();

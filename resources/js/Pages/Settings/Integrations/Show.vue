@@ -460,41 +460,6 @@ function goToPage(pageParam, page) {
                                 </div>
                             </div>
                         </div>
-                        <div v-if="(nasSnapshot.raid_disks?.length ?? 0) > 0" class="mt-6 overflow-x-auto">
-                            <div class="mb-3 text-caption text-muted">RAID Member Disks</div>
-                            <table class="table table-sm">
-                                <thead>
-                                    <tr class="border-hairline">
-                                        <th>Disk</th>
-                                        <th>Health</th>
-                                        <th>Slot</th>
-                                        <th>Source</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr
-                                        v-for="disk in nasSnapshot.raid_disks"
-                                        :key="`raid-${disk.id}`"
-                                        class="border-hairline transition-default hover:bg-elevated/30"
-                                    >
-                                        <td class="text-body-sm text-body">{{ disk.name }}</td>
-                                        <td>
-                                            <span class="status-chip">
-                                                <span
-                                                    class="signal-dot"
-                                                    :class="disk.health === 'healthy' ? 'signal-dot--live' : 'signal-dot--warning'"
-                                                />
-                                                {{ disk.health ?? 'unknown' }}
-                                            </span>
-                                        </td>
-                                        <td class="text-body-sm text-body">{{ disk.slot ?? '-' }}</td>
-                                        <td class="text-body-sm text-muted">
-                                            {{ disk.raw?.sources?.join(', ') ?? '-' }}
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
                     </section>
 
                     <section class="panel-card p-6">

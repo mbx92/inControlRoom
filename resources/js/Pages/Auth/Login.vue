@@ -3,6 +3,10 @@ import { Head, useForm } from '@inertiajs/vue3';
 
 const isDev = import.meta.env.DEV;
 
+defineProps({
+    maintenance: { type: Object, default: null },
+});
+
 const form = useForm({
     email: '',
     password: '',
@@ -32,6 +36,16 @@ function submit() {
                         <h2 class="text-title-lg text-body mt-4">Sign in to the room</h2>
                         <p class="text-body-sm text-muted mt-2">
                             Use your operator credentials to access telemetry, integrations, and audit evidence.
+                        </p>
+                    </div>
+
+                    <div
+                        v-if="maintenance?.enabled"
+                        class="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-left"
+                    >
+                        <div class="text-caption text-warning">Maintenance Mode Active</div>
+                        <p class="text-body-sm text-body mt-2">
+                            {{ maintenance.message || 'The system is under maintenance. Only administrators can sign in right now.' }}
                         </p>
                     </div>
 

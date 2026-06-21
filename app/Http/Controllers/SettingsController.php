@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
+use App\Services\MaintenanceMode;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -21,6 +23,7 @@ class SettingsController extends Controller
             'runtimeServices' => [
                 'ssh_terminal_proxy' => $this->getRuntimeServiceStatus('ssh-terminal-proxy'),
             ],
+            'maintenance' => MaintenanceMode::adminPayload(),
             'inventoryImportReport' => request()->session()->get('inventory_import_report'),
             'glitchtip' => [
                 'enabled' => filled(config('sentry.dsn')),
@@ -32,6 +35,51 @@ class SettingsController extends Controller
                 'csp_report_only' => (bool) config('glitchtip.csp_report_only', true),
             ],
         ]);
+    }
+
+    public function updateMaintenance(): RedirectResponse
+    {
+        $user = request()->user();
+        abort_unless($user?->isAdmin(), 403);
+
+        $validated = request()->validate([
+            'enabled' => ['required', 'boolean'],
+            'message' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $wasEnabled = MaintenanceMode::enabled();
+
+        if ($validated['enabled']) {
+            MaintenanceMode::enable($user, $validated['message'] ?? null);
+
+            AuditLog::record(
+                userId: $user->id,
+                action: 'system.maintenance.enable',
+                targetType: 'system_setting',
+                targetId: MaintenanceMode::KEY,
+                payload: [
+                    'message' => $validated['message'] ?? null,
+                ],
+                ipAddress: request()->ip(),
+            );
+
+            return back()->with('success', 'Maintenance mode enabled. Non-admin users are now blocked.');
+        }
+
+        MaintenanceMode::disable($user);
+
+        AuditLog::record(
+            userId: $user->id,
+            action: 'system.maintenance.disable',
+            targetType: 'system_setting',
+            targetId: MaintenanceMode::KEY,
+            payload: [
+                'was_enabled' => $wasEnabled,
+            ],
+            ipAddress: request()->ip(),
+        );
+
+        return back()->with('success', 'Maintenance mode disabled. All users can access the system again.');
     }
 
     public function sendGlitchtipTestEvent(HubInterface $hub): RedirectResponse

@@ -10,6 +10,7 @@ use App\Http\Controllers\HeadscaleController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\InventoryAssetController;
 use App\Http\Controllers\LabelPrinterController;
+use App\Http\Controllers\MaintenanceController;
 use App\Http\Controllers\NotificationChannelController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SiteController;
@@ -50,7 +51,8 @@ Route::middleware('guest')->group(function () {
     Route::post('login', [LoginController::class, 'store']);
 });
 
-Route::middleware(['auth', 'site-scope'])->group(function () {
+Route::middleware(['auth', 'site-scope', 'app-maintenance'])->group(function () {
+    Route::get('/maintenance', [MaintenanceController::class, 'show'])->name('maintenance');
     Route::pattern('asset', '[0-9a-fA-F-]{36}');
     Route::pattern('integration', '[0-9a-fA-F-]{36}');
     Route::pattern('vault', '[0-9a-fA-F-]{36}');
@@ -185,6 +187,9 @@ Route::middleware(['auth', 'site-scope'])->group(function () {
             Route::post('/{service}/stop', [SettingsController::class, 'stopRuntimeService'])->name('stop');
             Route::post('/{service}/restart', [SettingsController::class, 'restartRuntimeService'])->name('restart');
         });
+
+        Route::put('/settings/maintenance', [SettingsController::class, 'updateMaintenance'])
+            ->name('settings.maintenance.update');
 
         Route::post('/settings/glitchtip/test', [SettingsController::class, 'sendGlitchtipTestEvent'])
             ->name('settings.glitchtip.test');

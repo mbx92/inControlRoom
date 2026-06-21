@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Services\MaintenanceMode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -12,7 +14,9 @@ class LoginController extends Controller
 {
     public function create(): Response
     {
-        return Inertia::render('Auth/Login');
+        return Inertia::render('Auth/Login', [
+            'maintenance' => MaintenanceMode::enabled() ? MaintenanceMode::publicPayload() : null,
+        ]);
     }
 
     public function store(Request $request)
@@ -23,6 +27,23 @@ class LoginController extends Controller
         ]);
 
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
+            $user = $request->user();
+
+            if (
+                MaintenanceMode::enabled()
+                && $user instanceof User
+                && ! $user->isAdmin()
+            ) {
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+
+                return back()->withErrors([
+                    'email' => MaintenanceMode::message()
+                        ?? 'The system is currently under maintenance. Only administrators can sign in.',
+                ])->onlyInput('email');
+            }
+
             $request->session()->regenerate();
 
             return redirect()->intended(route('dashboard'));

@@ -10,6 +10,7 @@ const page = usePage();
 const isAdmin = computed(() => page.props.auth.permissions?.is_admin ?? false);
 const props = defineProps({
     runtimeServices: { type: Object, default: () => ({}) },
+    maintenance: { type: Object, default: () => ({ enabled: false, message: null }) },
     inventoryImportReport: { type: Object, default: null },
     glitchtip: { type: Object, default: () => ({}) },
 });
@@ -20,6 +21,10 @@ const runtimeBusyAction = ref('');
 const runtimeFlash = ref('');
 const runtimeError = ref('');
 const glitchtipForm = useForm({});
+const maintenanceForm = useForm({
+    enabled: props.maintenance?.enabled ?? false,
+    message: props.maintenance?.message ?? '',
+});
 const importForm = useForm({
     file: null,
 });
@@ -149,6 +154,12 @@ function sendBackendTestEvent() {
     });
 }
 
+function submitMaintenance() {
+    maintenanceForm.put(route('settings.maintenance.update'), {
+        preserveScroll: true,
+    });
+}
+
 function triggerFrontendTestError() {
     window.setTimeout(() => {
         throw new Error(`InfraControl frontend test error at ${new Date().toISOString()}`);
@@ -167,6 +178,66 @@ function triggerFrontendTestError() {
         />
 
         <div class="space-y-8">
+            <section v-if="isAdmin">
+                <div class="eyebrow">System</div>
+                <h2 class="text-title-lg text-body mt-3">Maintenance Mode</h2>
+                <p class="text-body-sm text-muted mt-2 mb-6">
+                    Blokir akses operator dan viewer saat upgrade atau pekerjaan maintenance. Admin tetap bisa masuk dan mengelola sistem.
+                    Untuk Laravel <code>php artisan down</code>, gunakan <code>php artisan down --render=errors.503</code> agar halaman 503 memakai styling InfraControl.
+                </p>
+
+                <form class="panel-card p-5 space-y-5" @submit.prevent="submitMaintenance">
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input
+                            v-model="maintenanceForm.enabled"
+                            type="checkbox"
+                            class="checkbox checkbox-warning mt-1"
+                        />
+                        <span>
+                            <span class="text-body-sm text-body block">Enable maintenance mode</span>
+                            <span class="text-caption text-muted mt-1 block">
+                                Non-admin users akan melihat halaman under maintenance dan tidak bisa login.
+                            </span>
+                        </span>
+                    </label>
+
+                    <div>
+                        <label for="maintenance-message" class="form-label">Public message</label>
+                        <textarea
+                            id="maintenance-message"
+                            v-model="maintenanceForm.message"
+                            class="textarea w-full mt-2"
+                            rows="3"
+                            placeholder="Contoh: Upgrade database pukul 22:00–23:00 WITA. Dashboard sementara tidak tersedia untuk operator."
+                            :disabled="!maintenanceForm.enabled"
+                        />
+                        <p v-if="maintenanceForm.errors.message" class="form-error mt-2">
+                            {{ maintenanceForm.errors.message }}
+                        </p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-3">
+                        <button
+                            type="submit"
+                            class="btn"
+                            :class="maintenanceForm.enabled ? 'btn-warning' : 'btn-primary'"
+                            :disabled="maintenanceForm.processing"
+                        >
+                            {{ maintenanceForm.processing ? 'Saving...' : (maintenanceForm.enabled ? 'Enable Maintenance' : 'Save / Disable Maintenance') }}
+                        </button>
+                        <span
+                            v-if="maintenance.enabled"
+                            class="status-chip"
+                        >
+                            <span class="signal-dot signal-dot--warning" />
+                            Maintenance active
+                        </span>
+                    </div>
+                </form>
+            </section>
+
+            <hr v-if="isAdmin" class="border-border" />
+
             <section>
                 <div class="eyebrow">Control Plane</div>
                 <h2 class="text-title-lg text-body mt-3">Headscale Manager</h2>
