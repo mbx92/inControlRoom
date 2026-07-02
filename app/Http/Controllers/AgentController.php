@@ -224,6 +224,11 @@ class AgentController extends Controller
         $validated = $request->validate([
             'agent_version' => ['nullable', 'string', 'max:255'],
             'device_id' => ['nullable', 'string', 'max:255'],
+            'hostname' => ['nullable', 'string', 'max:255'],
+            'os' => ['nullable', 'string', 'max:255'],
+            'os_version' => ['nullable', 'string', 'max:255'],
+            'arch' => ['nullable', 'string', 'max:255'],
+            'primary_ip' => ['nullable', 'string', 'max:255'],
             'timestamp' => ['nullable', 'date'],
             'metrics' => ['nullable', 'array'],
             'services' => ['nullable', 'array'],
@@ -233,6 +238,11 @@ class AgentController extends Controller
         $agent->forceFill([
             'agent_version' => $validated['agent_version'] ?? $agent->agent_version,
             'device_id' => $validated['device_id'] ?? $agent->device_id,
+            'hostname' => $validated['hostname'] ?? $agent->hostname,
+            'os' => $validated['os'] ?? $agent->os,
+            'os_version' => $validated['os_version'] ?? $agent->os_version,
+            'arch' => $validated['arch'] ?? $agent->arch,
+            'primary_ip' => $validated['primary_ip'] ?? $agent->primary_ip,
             'labels' => $validated['labels'] ?? [],
             'last_metrics' => $validated['metrics'] ?? [],
             'last_services' => $validated['services'] ?? [],

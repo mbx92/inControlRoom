@@ -1,0 +1,76 @@
+name: windows-agent
+
+on:
+  push:
+    paths:
+      - '.github/workflows/windows-agent.yml'
+      - 'agent/**'
+      - 'app/Http/Controllers/AgentController.php'
+      - 'tests/Feature/AgentApiTest.php'
+  pull_request:
+    paths:
+      - '.github/workflows/windows-agent.yml'
+      - 'agent/**'
+      - 'app/Http/Controllers/AgentController.php'
+      - 'tests/Feature/AgentApiTest.php'
+  workflow_dispatch:
+
+jobs:
+  build-windows-agent:
+    runs-on: windows-latest
+
+    env:
+      SERVICE_PUBLISH_DIR: ${{ github.workspace }}\artifacts\publish\service
+      CONFIG_PUBLISH_DIR: ${{ github.workspace }}\artifacts\publish\config
+      TEST_RESULTS_DIR: ${{ github.workspace }}\artifacts\test-results
+      ASSETS_DIR: ${{ github.workspace }}\agent\assets
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore agent solution
+        run: dotnet restore agent/InfraControl.Agent.sln
+
+      - name: Build agent solution
+        run: dotnet build agent/InfraControl.Agent.sln --configuration Release --no-restore
+
+      - name: Test agent solution
+        run: dotnet test agent/tests/InfraControl.Agent.Tests/InfraControl.Agent.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=InfraControl.Agent.Tests.trx" --results-directory "${{ env.TEST_RESULTS_DIR }}"
+
+      - name: Publish Windows service
+        run: dotnet publish agent/src/InfraControl.Agent.Service/InfraControl.Agent.Service.csproj --configuration Release --no-build --runtime win-x64 --self-contained true /p:PublishSingleFile=true --output "${{ env.SERVICE_PUBLISH_DIR }}"
+
+      - name: Publish config app
+        run: dotnet publish agent/src/InfraControl.Agent.Config/InfraControl.Agent.Config.csproj --configuration Release --no-build --runtime win-x64 --self-contained true /p:PublishSingleFile=true --output "${{ env.CONFIG_PUBLISH_DIR }}"
+
+      - name: Build MSI
+        run: dotnet build agent/installer/InfraControl.Agent.Setup.wixproj --configuration Release -p:ServicePublishDir="${{ env.SERVICE_PUBLISH_DIR }}" -p:ConfigPublishDir="${{ env.CONFIG_PUBLISH_DIR }}" -p:AssetsDir="${{ env.ASSETS_DIR }}"
+
+      - name: Upload service artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: infracontrol-agent-service
+          path: ${{ env.SERVICE_PUBLISH_DIR }}
+
+      - name: Upload config artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: infracontrol-agent-config
+          path: ${{ env.CONFIG_PUBLISH_DIR }}
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: infracontrol-agent-msi
+          path: agent/installer/bin/Release/**/*.msi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: infracontrol-agent-test-results
+          path: ${{ env.TEST_RESULTS_DIR }}

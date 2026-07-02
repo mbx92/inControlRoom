@@ -1,0 +1,7 @@
+<Project Sdk="WixToolset.Sdk">
+  <PropertyGroup>
+    <OutputName>InfraControl.Agent.Setup</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <DefineConstants>ServicePublishDir=$(ServicePublishDir);ConfigPublishDir=$(ConfigPublishDir);AssetsDir=$(AssetsDir)</DefineConstants>
+  </PropertyGroup>
+</Project>

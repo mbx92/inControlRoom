@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>InfraControl.Agent.Config</RootNamespace>
+    <AssemblyName>InfraControl.Agent.Config</AssemblyName>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <PublishSingleFile Condition="'$(Configuration)' == 'Release'">true</PublishSingleFile>
+    <SelfContained Condition="'$(Configuration)' == 'Release'">true</SelfContained>
+    <UseAppHost>true</UseAppHost>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\InfraControl.Agent.Core\InfraControl.Agent.Core.csproj" />
+  </ItemGroup>
+</Project>

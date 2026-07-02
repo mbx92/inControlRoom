@@ -1,0 +1,6 @@
+{
+  "server_url": "",
+  "enrollment_token": "",
+  "agent_token": "",
+  "heartbeat_interval_seconds": 30
+}

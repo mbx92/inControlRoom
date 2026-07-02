@@ -29,6 +29,8 @@ docker-compose.local.yml
 /storage/*.key
 /storage/pail
 /vendor
+agent/**/bin
+agent/**/obj
 _ide_helper.php
 Homestead.json
 Homestead.yaml
