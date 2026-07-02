@@ -9,6 +9,8 @@ docker-compose.local.yml
 .phpunit.result.cache
 /.codex
 /.cursor/
+/.nuget/
+/.tmp/
 /.idea
 /.nova
 /.phpunit.cache

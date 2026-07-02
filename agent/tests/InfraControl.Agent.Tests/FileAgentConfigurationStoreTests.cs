@@ -1,5 +1,6 @@
 using InfraControl.Agent.Core.Models;
 using InfraControl.Agent.Core.Services;
+using System.Text;
 
 namespace InfraControl.Agent.Tests;
 
@@ -24,7 +25,7 @@ public sealed class FileAgentConfigurationStoreTests
 
             string rawJson = await File.ReadAllTextAsync(path);
             Assert.DoesNotContain("agent-secret", rawJson, StringComparison.Ordinal);
-            Assert.Contains("encrypted::agent-secret", rawJson, StringComparison.Ordinal);
+            Assert.Contains("encrypted::", rawJson, StringComparison.Ordinal);
 
             AgentConfiguration loaded = await store.LoadAsync();
 
@@ -44,8 +45,9 @@ public sealed class FileAgentConfigurationStoreTests
 
     private sealed class FakeSecretProtector : ISecretProtector
     {
-        public string Protect(string plainText) => $"encrypted::{plainText}";
+        public string Protect(string plainText) => $"encrypted::{Convert.ToBase64String(Encoding.UTF8.GetBytes(plainText))}";
 
-        public string Unprotect(string cipherText) => cipherText.Replace("encrypted::", string.Empty, StringComparison.Ordinal);
+        public string Unprotect(string cipherText) =>
+            Encoding.UTF8.GetString(Convert.FromBase64String(cipherText.Replace("encrypted::", string.Empty, StringComparison.Ordinal)));
     }
 }
