@@ -1,9 +1,9 @@
 <?php
 
+use App\Http\Controllers\AgentController;
+use App\Http\Controllers\AgentMetricsController;
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AlertRuleController;
-use App\Http\Controllers\AgentController;
-use App\Http\Controllers\AssetMonitoringController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
@@ -63,12 +63,14 @@ Route::middleware(['auth', 'site-scope', 'app-maintenance'])->group(function () 
     Route::pattern('event', '[0-9]+');
     Route::pattern('printer', '[0-9]+');
     Route::pattern('user', '[0-9]+');
+    Route::pattern('agent', '[0-9a-fA-F-]{36}');
 
     Route::redirect('/', '/dashboard');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/alerts', [AlertController::class, 'index'])->name('alerts.index');
     Route::get('/alerts/{event}', [AlertController::class, 'show'])->name('alerts.show');
-    Route::get('/asset-monitoring', [AssetMonitoringController::class, 'index'])->name('asset-monitoring.index');
+    Route::get('/agents/metrics', [AgentMetricsController::class, 'index'])->name('agents.metrics.index');
+    Route::get('/agents/metrics/{agent}', [AgentMetricsController::class, 'show'])->name('agents.metrics.show');
     Route::get('/topology', [TopologyController::class, 'index'])->name('topology.index');
     Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings.index');
@@ -105,7 +107,6 @@ Route::middleware(['auth', 'site-scope', 'app-maintenance'])->group(function () 
     // Execute routes (admin + operator)
     Route::middleware('role:admin,operator')->group(function () {
         Route::put('/alerts/{event}/acknowledge', [AlertController::class, 'acknowledge'])->name('alerts.acknowledge');
-        Route::post('/asset-monitoring/{asset}/check', [AssetMonitoringController::class, 'check'])->name('asset-monitoring.check');
 
         Route::post('/{asset}/print-label', [InventoryAssetController::class, 'printLabel'])
             ->prefix('inventory')->name('inventory.print-label');
@@ -148,6 +149,8 @@ Route::middleware(['auth', 'site-scope', 'app-maintenance'])->group(function () 
             Route::get('/import/template', [InventoryAssetController::class, 'importTemplate'])->name('import-template');
             Route::get('/{asset}/edit', [InventoryAssetController::class, 'edit'])->name('edit');
             Route::put('/{asset}', [InventoryAssetController::class, 'update'])->name('update');
+            Route::put('/{asset}/agent-link', [InventoryAssetController::class, 'updateAgentLink'])
+                ->name('agent-link.update');
         });
 
         Route::prefix('settings/integrations')->name('integrations.')->group(function () {
@@ -198,10 +201,14 @@ Route::middleware(['auth', 'site-scope', 'app-maintenance'])->group(function () 
             ->name('settings.glitchtip.csp-test');
         Route::get('/settings/agents', [AgentController::class, 'index'])
             ->name('settings.agents.index');
+        Route::get('/settings/agents/installer/download', [AgentController::class, 'downloadInstaller'])
+            ->name('settings.agents.installer.download');
         Route::post('/settings/agents/enrollment-tokens', [AgentController::class, 'storeToken'])
             ->name('settings.agents.tokens.store');
         Route::post('/settings/agents/enrollment-tokens/{agentEnrollmentToken}/revoke', [AgentController::class, 'revokeToken'])
             ->name('settings.agents.tokens.revoke');
+        Route::put('/settings/agents/{agent}/inventory-link', [AgentController::class, 'updateInventoryLink'])
+            ->name('settings.agents.inventory-link.update');
         Route::prefix('settings/print-smb')->name('print-smb.')->group(function () {
             Route::get('/create', [LabelPrinterController::class, 'create'])->name('create');
             Route::post('/', [LabelPrinterController::class, 'store'])->name('store');

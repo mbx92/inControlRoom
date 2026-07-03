@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Exports\InventoryAssetImportTemplateExport;
 use App\Http\Controllers\Concerns\AppliesSiteScope;
+use App\Http\Controllers\Concerns\PresentsAgentInventoryLink;
 use App\Imports\InventoryAssetImportRowsImport;
 use App\Jobs\ProcessInventoryLabelPrintJob;
+use App\Models\Agent;
 use App\Models\AssetLink;
 use App\Models\AuditLog;
 use App\Models\InventoryAsset;
@@ -16,6 +18,7 @@ use App\Services\Inventory\InventoryAssetImportService;
 use App\Services\LabelPrinting\InventoryLabelPrintService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -28,6 +31,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 class InventoryAssetController extends Controller
 {
     use AppliesSiteScope;
+    use PresentsAgentInventoryLink;
 
     public function index(Request $request): Response
     {
@@ -108,13 +112,77 @@ class InventoryAssetController extends Controller
     public function show(InventoryAsset $asset): Response
     {
         $this->authorizeSiteAccess($asset->site_id);
-        $asset->load('site');
+        $asset->load(['site', 'agent']);
 
         return Inertia::render('Inventory/Show', [
             'asset' => $this->presentAsset($asset, includeCustomFieldText: true),
             'history' => $this->assetHistory($asset),
             'labelPrint' => $this->labelPrintMeta($asset),
+            'linkedAgent' => $this->presentLinkedAgent($asset->agent),
+            'availableAgents' => $this->agentLinkOptions($asset),
+            'canManageAgentLink' => request()->user()?->isAdmin() ?? false,
         ]);
+    }
+
+    public function updateAgentLink(Request $request, InventoryAsset $asset): RedirectResponse
+    {
+        abort_unless($request->user()?->isAdmin(), 403);
+        $this->authorizeSiteAccess($asset->site_id);
+
+        $validated = $request->validate([
+            'agent_id' => ['nullable', 'uuid', 'exists:agents,id'],
+        ]);
+
+        $asset->load('agent');
+        $agentId = $validated['agent_id'] ?? null;
+        $previousAgentId = $asset->agent?->id;
+
+        if ($asset->site_id === null) {
+            throw ValidationException::withMessages([
+                'agent_id' => 'Assign this asset to a site before linking an agent.',
+            ]);
+        }
+
+        if ($agentId !== null) {
+            $agent = Agent::query()->findOrFail($agentId);
+
+            if ($agent->site_id !== $asset->site_id) {
+                throw ValidationException::withMessages([
+                    'agent_id' => 'Agent must belong to the same site as this inventory asset.',
+                ]);
+            }
+        }
+
+        DB::transaction(function () use ($asset, $agentId, $previousAgentId, $request) {
+            Agent::query()
+                ->where('inventory_asset_id', $asset->id)
+                ->update(['inventory_asset_id' => null]);
+
+            if ($agentId !== null) {
+                Agent::query()
+                    ->whereKey($agentId)
+                    ->update(['inventory_asset_id' => $asset->id]);
+            }
+
+            AuditLog::record(
+                userId: $request->user()->id,
+                action: 'inventory_asset.agent-link.update',
+                targetType: 'inventory_asset',
+                targetId: $asset->id,
+                payload: [
+                    'site_id' => $asset->site_id,
+                    'asset_name' => $asset->name,
+                    'previous_agent_id' => $previousAgentId,
+                    'agent_id' => $agentId,
+                ],
+                ipAddress: $request->ip(),
+                siteId: $asset->site_id,
+            );
+        });
+
+        return redirect()
+            ->back()
+            ->with('success', $agentId === null ? 'Agent link removed from inventory asset.' : 'Inventory asset linked to agent.');
     }
 
     public function scan(InventoryAsset $asset): Response

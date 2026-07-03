@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>InfraControl Agent Config</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <h1>InfraControl Agent Config</h1>
+        <p>Set the server URL and enrollment token, then control the Windows service from one place.</p>
+      </header>
+
+      <section class="card">
+        <label class="field">
+          <span>Server URL</span>
+          <input id="server-url" type="url" placeholder="https://infracontrol.example.com" />
+        </label>
+        <label class="field">
+          <span>Enrollment Token</span>
+          <input id="enrollment-token" type="password" autocomplete="off" />
+        </label>
+      </section>
+
+      <section class="card actions">
+        <button id="save-button" class="button primary">Save</button>
+        <button id="start-button" class="button success">Start Service</button>
+        <button id="stop-button" class="button danger">Stop Service</button>
+        <span id="feedback" class="feedback"></span>
+      </section>
+
+      <section class="card status-grid">
+        <div>
+          <h2>Service</h2>
+          <p id="service-status">-</p>
+        </div>
+        <div>
+          <h2>Agent Status</h2>
+          <p id="agent-status">-</p>
+        </div>
+        <div>
+          <h2>Last Update</h2>
+          <p id="last-updated">-</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Status Detail</h2>
+        <p id="status-message" class="detail">-</p>
+        <p class="note">
+          Expected v1 statuses: not configured, enrolled, invalid token, server unreachable, and heartbeat healthy.
+          Start the service after saving the configuration.
+        </p>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

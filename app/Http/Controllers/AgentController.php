@@ -2,21 +2,32 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsAgentInventoryLink;
 use App\Models\Agent;
 use App\Models\AgentEnrollmentToken;
 use App\Models\AuditLog;
+use App\Models\InventoryAsset;
 use App\Models\Site;
+use App\Services\Agent\AgentInstallerStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AgentController extends Controller
 {
+    use PresentsAgentInventoryLink;
+
+    public function __construct(
+        private readonly AgentInstallerStorage $installerStorage,
+    ) {}
+
     public function index(): Response
     {
         abort_unless(request()->user()?->isAdmin(), 403);
@@ -29,7 +40,7 @@ class AgentController extends Controller
             ->all();
 
         $agents = Agent::query()
-            ->with(['site:id,name,code', 'enrollmentToken:id,name'])
+            ->with(['site:id,name,code', 'enrollmentToken:id,name', 'inventoryAsset:id,name,asset_tag,category,primary_ip,status'])
             ->latest('last_seen_at')
             ->latest('created_at')
             ->get()
@@ -50,8 +61,99 @@ class AgentController extends Controller
             'tokens' => $tokens,
             'agents' => $agents,
             'sites' => $sites,
+            'inventoryAssets' => InventoryAsset::query()
+                ->with('agent:id,inventory_asset_id,hostname')
+                ->orderBy('name')
+                ->get(['id', 'site_id', 'name', 'asset_tag', 'category', 'primary_ip'])
+                ->map(fn (InventoryAsset $asset) => [
+                    'id' => $asset->id,
+                    'site_id' => $asset->site_id,
+                    'name' => $asset->name,
+                    'asset_tag' => $asset->asset_tag,
+                    'category' => $asset->category,
+                    'primary_ip' => $asset->primary_ip,
+                    'linked_agent_id' => $asset->agent?->id,
+                ])
+                ->all(),
             'generatedToken' => request()->session()->get('generated_agent_enrollment_token'),
+            'installer' => $this->installerStorage->present(),
         ]);
+    }
+
+    public function downloadInstaller(Request $request): StreamedResponse
+    {
+        abort_unless($request->user()?->isAdmin(), 403);
+        abort_unless($this->installerStorage->isConfigured(), 503, 'Agent installer storage is not configured.');
+        abort_unless($this->installerStorage->exists(), 404, 'Agent installer is not available yet.');
+
+        AuditLog::record(
+            userId: $request->user()->id,
+            action: 'agent.installer.download',
+            targetType: 'agent_installer',
+            targetId: null,
+            payload: [
+                'filename' => config('agent.installer.filename'),
+                'version' => config('agent.installer.version'),
+            ],
+        );
+
+        return $this->installerStorage->downloadResponse();
+    }
+
+    public function updateInventoryLink(Request $request, Agent $agent): RedirectResponse
+    {
+        abort_unless($request->user()?->isAdmin(), 403);
+
+        $validated = $request->validate([
+            'inventory_asset_id' => ['nullable', 'uuid', 'exists:inventory_assets,id'],
+        ]);
+
+        $assetId = $validated['inventory_asset_id'] ?? null;
+        $previousAssetId = $agent->inventory_asset_id;
+
+        if ($assetId !== null) {
+            $asset = InventoryAsset::query()->findOrFail($assetId);
+
+            if ($asset->site_id !== $agent->site_id) {
+                throw ValidationException::withMessages([
+                    'inventory_asset_id' => 'Inventory asset must belong to the same site as the agent.',
+                ]);
+            }
+
+            $alreadyLinked = Agent::query()
+                ->where('inventory_asset_id', $assetId)
+                ->where('id', '!=', $agent->id)
+                ->exists();
+
+            if ($alreadyLinked) {
+                throw ValidationException::withMessages([
+                    'inventory_asset_id' => 'This inventory asset is already linked to another agent.',
+                ]);
+            }
+        }
+
+        $agent->forceFill([
+            'inventory_asset_id' => $assetId,
+        ])->save();
+
+        AuditLog::record(
+            userId: $request->user()->id,
+            action: 'agent.inventory-link.update',
+            targetType: 'agent',
+            targetId: $agent->id,
+            payload: [
+                'site_id' => $agent->site_id,
+                'hostname' => $agent->hostname,
+                'previous_inventory_asset_id' => $previousAssetId,
+                'inventory_asset_id' => $assetId,
+            ],
+            ipAddress: $request->ip(),
+            siteId: $agent->site_id,
+        );
+
+        return redirect()
+            ->back()
+            ->with('success', $assetId === null ? 'Agent inventory link removed.' : 'Agent linked to inventory asset.');
     }
 
     public function storeToken(Request $request): RedirectResponse
@@ -137,7 +239,7 @@ class AgentController extends Controller
             'arch' => ['nullable', 'string', 'max:255'],
             'agent_version' => ['nullable', 'string', 'max:255'],
             'primary_ip' => ['nullable', 'string', 'max:255'],
-            'inventory_asset_id' => ['nullable', 'string', 'max:255'],
+            'inventory_asset_id' => ['nullable', 'uuid', 'exists:inventory_assets,id'],
         ]);
 
         $token = AgentEnrollmentToken::query()
@@ -149,6 +251,28 @@ class AgentController extends Controller
             return response()->json([
                 'message' => 'Enrollment token is invalid, expired, exhausted, or revoked.',
             ], 422);
+        }
+
+        $inventoryAssetId = $validated['inventory_asset_id'] ?? null;
+
+        if ($inventoryAssetId !== null) {
+            $asset = InventoryAsset::query()->find($inventoryAssetId);
+
+            if ($asset === null || $asset->site_id !== $token->site_id) {
+                return response()->json([
+                    'message' => 'Inventory asset is invalid for this enrollment site.',
+                ], 422);
+            }
+
+            $alreadyLinked = Agent::query()
+                ->where('inventory_asset_id', $inventoryAssetId)
+                ->exists();
+
+            if ($alreadyLinked) {
+                return response()->json([
+                    'message' => 'Inventory asset is already linked to another agent.',
+                ], 422);
+            }
         }
 
         $plainAgentToken = 'agent_'.Str::random(48);
@@ -177,7 +301,7 @@ class AgentController extends Controller
                 'primary_ip' => $validated['primary_ip'] ?? null,
                 'agent_version' => $validated['agent_version'] ?? null,
                 'agent_token_hash' => hash('sha256', $plainAgentToken),
-                'inventory_asset_id' => $validated['inventory_asset_id'] ?? null,
+                'inventory_asset_id' => $inventoryAssetId,
                 'enrolled_at' => $agent->enrolled_at ?? now(),
                 'last_seen_at' => now(),
                 'last_ip_address' => $request->ip(),
@@ -293,6 +417,7 @@ class AgentController extends Controller
 
         return [
             'id' => $agent->id,
+            'site_id' => $agent->site_id,
             'site_name' => $agent->site?->name ?? 'Unknown site',
             'hostname' => $agent->hostname,
             'device_id' => $agent->device_id,
@@ -300,7 +425,7 @@ class AgentController extends Controller
             'os' => trim(collect([$agent->os, $agent->os_version])->filter()->implode(' ')),
             'arch' => $agent->arch,
             'agent_version' => $agent->agent_version,
-            'inventory_asset_id' => $agent->inventory_asset_id,
+            'inventory_asset' => $this->presentInventoryAssetLink($agent->inventoryAsset),
             'status' => $status,
             'last_seen_at' => optional($agent->last_seen_at)?->toIso8601String(),
             'enrolled_at' => optional($agent->enrolled_at)?->toIso8601String(),

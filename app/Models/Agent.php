@@ -55,4 +55,9 @@ class Agent extends Model
     {
         return $this->belongsTo(AgentEnrollmentToken::class, 'enrollment_token_id');
     }
+
+    public function inventoryAsset(): BelongsTo
+    {
+        return $this->belongsTo(InventoryAsset::class, 'inventory_asset_id');
+    }
 }

@@ -14,18 +14,6 @@ class InventoryAsset extends Model
 {
     use HasFactory, HasUuids;
 
-    public const REACHABILITY_ONLINE = 'online';
-
-    public const REACHABILITY_OFFLINE = 'offline';
-
-    public const REACHABILITY_UNKNOWN = 'unknown';
-
-    public const REACHABILITY_STATUSES = [
-        self::REACHABILITY_ONLINE => 'Online',
-        self::REACHABILITY_OFFLINE => 'Offline',
-        self::REACHABILITY_UNKNOWN => 'Unknown',
-    ];
-
     public const STATUSES = [
         'active' => 'Active',
         'standby' => 'Standby',
@@ -68,13 +56,6 @@ class InventoryAsset extends Model
         'manufacturer',
         'model',
         'primary_ip',
-        'monitoring_enabled',
-        'reachability_status',
-        'reachability_checked_at',
-        'reachability_last_seen_at',
-        'reachability_latency_ms',
-        'reachability_fail_count',
-        'reachability_message',
         'location_label',
         'owner_name',
         'acquired_at',
@@ -89,9 +70,6 @@ class InventoryAsset extends Model
             'custom_fields' => 'array',
             'acquired_at' => 'date',
             'warranty_expires_at' => 'date',
-            'monitoring_enabled' => 'boolean',
-            'reachability_checked_at' => 'datetime',
-            'reachability_last_seen_at' => 'datetime',
         ];
     }
 
@@ -119,15 +97,13 @@ class InventoryAsset extends Model
         return $this->hasMany(InventoryLabelPrintJob::class, 'asset_id');
     }
 
+    public function agent(): HasOne
+    {
+        return $this->hasOne(Agent::class, 'inventory_asset_id');
+    }
+
     public function getStatusLabelAttribute(): string
     {
         return static::STATUSES[$this->status] ?? Str::headline($this->status);
-    }
-
-    public function getReachabilityStatusLabelAttribute(): string
-    {
-        $status = $this->reachability_status ?: self::REACHABILITY_UNKNOWN;
-
-        return static::REACHABILITY_STATUSES[$status] ?? Str::headline($status);
     }
 }

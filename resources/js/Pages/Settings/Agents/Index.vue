@@ -1,15 +1,34 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PageHeader from '@/Components/PageHeader.vue';
+import AgentInventoryLinkDialog from '@/Components/AgentInventoryLinkDialog.vue';
+import AgentInventoryLinkStatus from '@/Components/AgentInventoryLinkStatus.vue';
 
 const props = defineProps({
     tokens: { type: Array, default: () => [] },
     agents: { type: Array, default: () => [] },
     sites: { type: Array, default: () => [] },
+    inventoryAssets: { type: Array, default: () => [] },
     generatedToken: { type: String, default: '' },
+    installer: {
+        type: Object,
+        default: () => ({
+            configured: false,
+            available: false,
+            version: '1.0.0',
+            filename: 'InfraControl.Agent.Setup.exe',
+            size_bytes: null,
+            last_modified_at: null,
+            bucket_download_url: null,
+        }),
+    },
 });
+
+const copyMessage = ref('');
+
+const linkDialogRef = ref(null);
 
 const tokenForm = useForm({
     site_id: props.sites[0]?.id ?? '',
@@ -51,6 +70,39 @@ function agentStatusClass(status) {
         ? 'status-chip'
         : 'status-chip opacity-80';
 }
+
+function openInventoryLink(agent) {
+    linkDialogRef.value?.open(agent);
+}
+
+function formatBytes(bytes) {
+    if (!bytes) {
+        return '-';
+    }
+
+    if (bytes < 1024 * 1024) {
+        return `${Math.round(bytes / 1024)} KB`;
+    }
+
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function copyBucketUrl() {
+    if (!props.installer.bucket_download_url) {
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(props.installer.bucket_download_url);
+        copyMessage.value = 'URL disalin.';
+    } catch {
+        copyMessage.value = 'Gagal menyalin URL.';
+    }
+
+    window.setTimeout(() => {
+        copyMessage.value = '';
+    }, 2000);
+}
 </script>
 
 <template>
@@ -70,6 +122,78 @@ function agentStatusClass(status) {
         </PageHeader>
 
         <div class="space-y-8">
+            <section class="panel-card p-5">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <div class="eyebrow">Windows Installer</div>
+                        <h2 class="mt-3 text-title-md text-body">Download Agent</h2>
+                        <p class="mt-2 text-body-sm text-muted">
+                            Installer Windows disimpan di MinIO dan diunduh melalui InfraControl.
+                        </p>
+                    </div>
+                    <div class="status-chip">v{{ installer.version }}</div>
+                </div>
+
+                <div class="mt-5 grid gap-4 md:grid-cols-3">
+                    <div class="rounded-2xl border border-hairline bg-base-300 p-4">
+                        <div class="text-caption text-muted">File</div>
+                        <div class="mt-2 text-body-sm text-body font-medium">{{ installer.filename }}</div>
+                    </div>
+                    <div class="rounded-2xl border border-hairline bg-base-300 p-4">
+                        <div class="text-caption text-muted">Size</div>
+                        <div class="mt-2 text-body-sm text-body font-medium">{{ formatBytes(installer.size_bytes) }}</div>
+                    </div>
+                    <div class="rounded-2xl border border-hairline bg-base-300 p-4">
+                        <div class="text-caption text-muted">Updated</div>
+                        <div class="mt-2 text-body-sm text-body font-medium">{{ formatDate(installer.last_modified_at) }}</div>
+                    </div>
+                </div>
+
+                <div class="mt-5 flex flex-wrap items-center gap-3">
+                    <a
+                        v-if="installer.available"
+                        :href="route('settings.agents.installer.download')"
+                        class="btn btn-primary"
+                    >
+                        Download Installer
+                    </a>
+                    <span v-else class="btn btn-primary btn-disabled">Download Installer</span>
+
+                    <p v-if="!installer.configured" class="text-body-sm text-muted">
+                        MinIO belum dikonfigurasi. Set <code>MINIO_ENDPOINT</code>, <code>MINIO_ACCESS_KEY</code>, <code>MINIO_SECRET_KEY</code>, dan <code>MINIO_BUCKET</code>.
+                    </p>
+                    <p v-else-if="!installer.available" class="text-body-sm text-muted">
+                        Installer belum di-upload. Jalankan <code>php artisan agent:publish-installer</code> setelah build.
+                    </p>
+                </div>
+
+                <div v-if="installer.bucket_download_url" class="mt-5 rounded-2xl border border-hairline bg-base-300 p-4">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <div class="text-caption text-muted">Bucket Download URL</div>
+                            <p class="mt-2 text-body-sm text-muted">
+                                Link langsung dari bucket/CDN untuk dibagikan ke client tanpa melalui InfraControl.
+                            </p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-ghost btn-sm" @click="copyBucketUrl">
+                                Copy URL
+                            </button>
+                            <a
+                                :href="installer.bucket_download_url"
+                                class="btn btn-secondary btn-sm"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                Open
+                            </a>
+                        </div>
+                    </div>
+                    <code class="mt-4 block break-all text-body-sm text-body font-mono-num">{{ installer.bucket_download_url }}</code>
+                    <p v-if="copyMessage" class="mt-2 text-caption text-muted">{{ copyMessage }}</p>
+                </div>
+            </section>
+
             <section v-if="hasGeneratedToken" class="panel-card p-5">
                 <div class="eyebrow">Copy Now</div>
                 <h2 class="mt-3 text-title-md text-body">Enrollment token baru</h2>
@@ -152,7 +276,7 @@ function agentStatusClass(status) {
                     <h2 class="mt-3 text-title-md text-body">How to use</h2>
                     <ol class="mt-4 space-y-3 text-body-sm text-body">
                         <li>1. Generate token untuk site target.</li>
-                        <li>2. Install MSI agent di device client.</li>
+                        <li>2. Download dan install agent di device client.</li>
                         <li>3. Buka <code>InfraControl Agent Config</code> dari Start Menu.</li>
                         <li>4. Isi <code>Server URL</code> dan <code>Enrollment Token</code>.</li>
                         <li>5. Klik <code>Save Config</code> lalu <code>Start</code>.</li>
@@ -241,7 +365,9 @@ function agentStatusClass(status) {
                                 <th>IP</th>
                                 <th>OS</th>
                                 <th>Version</th>
+                                <th>Inventory</th>
                                 <th>Last Seen</th>
+                                <th />
                             </tr>
                         </thead>
                         <tbody>
@@ -256,12 +382,32 @@ function agentStatusClass(status) {
                                 <td>{{ agent.primary_ip || '-' }}</td>
                                 <td>{{ agent.os || '-' }}</td>
                                 <td>{{ agent.agent_version || '-' }}</td>
+                                <td>
+                                    <AgentInventoryLinkStatus :agent="agent" />
+                                    <button
+                                        type="button"
+                                        class="btn btn-ghost btn-xs mt-2"
+                                        @click="openInventoryLink(agent)"
+                                    >
+                                        {{ agent.inventory_asset ? 'Change Link' : 'Link Inventory' }}
+                                    </button>
+                                </td>
                                 <td>{{ formatDate(agent.last_seen_at) }}</td>
+                                <td class="text-right">
+                                    <Link :href="route('agents.metrics.show', agent.id)" class="btn btn-ghost btn-sm">
+                                        Metrics
+                                    </Link>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </section>
+
+            <AgentInventoryLinkDialog
+                ref="linkDialogRef"
+                :inventory-assets="inventoryAssets"
+            />
         </div>
     </AppLayout>
 </template>

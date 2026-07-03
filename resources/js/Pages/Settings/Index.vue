@@ -387,9 +387,14 @@ function triggerFrontendTestError() {
                             </p>
                         </div>
 
-                        <Link :href="route('settings.agents.index')" class="btn btn-primary">
-                            Open Agent Enrollment
-                        </Link>
+                        <div class="flex flex-wrap gap-2">
+                            <Link :href="route('agents.metrics.index')" class="btn btn-secondary">
+                                Open Agent Metrics
+                            </Link>
+                            <Link :href="route('settings.agents.index')" class="btn btn-primary">
+                                Open Agent Enrollment
+                            </Link>
+                        </div>
                     </div>
                 </div>
             </section>

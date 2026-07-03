@@ -2,6 +2,7 @@
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PageHeader from '@/Components/PageHeader.vue';
+import InventoryAgentLinkPanel from '@/Components/InventoryAgentLinkPanel.vue';
 
 const page = usePage();
 const permissions = page.props.auth.permissions ?? {};
@@ -10,6 +11,9 @@ const props = defineProps({
     asset: { type: Object, required: true },
     history: { type: Array, default: () => [] },
     labelPrint: { type: Object, default: () => ({}) },
+    linkedAgent: { type: Object, default: null },
+    availableAgents: { type: Array, default: () => [] },
+    canManageAgentLink: { type: Boolean, default: false },
 });
 
 function printLabel() {
@@ -189,6 +193,13 @@ function printLabel() {
                 </section>
 
                 <aside class="space-y-6 xl:self-start">
+                    <InventoryAgentLinkPanel
+                        :asset="asset"
+                        :linked-agent="linkedAgent"
+                        :available-agents="availableAgents"
+                        :can-manage="canManageAgentLink"
+                    />
+
                     <section class="panel-subtle p-5">
                         <div class="eyebrow">Record Info</div>
                         <div class="data-list mt-5">

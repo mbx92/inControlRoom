@@ -25,7 +25,6 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands()
     ->withSchedule(function (Schedule $schedule): void {
         $schedule->command('alerts:poll')->everyMinute()->withoutOverlapping();
-        $schedule->command('inventory:probe-reachability')->everyFiveMinutes()->withoutOverlapping();
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');

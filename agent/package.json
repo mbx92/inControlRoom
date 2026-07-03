@@ -1,0 +1,21 @@
+{
+  "name": "infracontrol-agent",
+  "version": "1.0.0",
+  "description": "InfraControl Windows endpoint agent",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "test": "node --test tests/**/*.test.mjs",
+    "start:service": "node src/service/index.mjs",
+    "start:config": "node src/config/index.mjs",
+    "build": "node scripts/prepare-dist.mjs",
+    "build:installer": "node scripts/build-installer.mjs"
+  },
+  "dependencies": {
+    "systeminformation": "^5.27.7"
+  }
+}

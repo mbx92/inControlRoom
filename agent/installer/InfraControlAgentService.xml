@@ -1,0 +1,14 @@
+<service>
+  <id>InfraControlAgentService</id>
+  <name>InfraControl Agent Service</name>
+  <description>Runs the InfraControl Windows agent heartbeat and inventory loop.</description>
+  <executable>node.exe</executable>
+  <arguments>src\service\index.mjs</arguments>
+  <startmode>Automatic</startmode>
+  <workingdirectory>%BASE%</workingdirectory>
+  <logpath>%ProgramData%\InfraControl\Agent\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>

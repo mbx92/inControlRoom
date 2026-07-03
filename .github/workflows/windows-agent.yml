@@ -6,71 +6,88 @@ on:
       - '.github/workflows/windows-agent.yml'
       - 'agent/**'
       - 'app/Http/Controllers/AgentController.php'
+      - 'app/Services/Agent/**'
+      - 'config/agent.php'
+      - 'config/filesystems.php'
       - 'tests/Feature/AgentApiTest.php'
+      - 'tests/Feature/AgentInstallerDownloadTest.php'
   pull_request:
     paths:
       - '.github/workflows/windows-agent.yml'
       - 'agent/**'
       - 'app/Http/Controllers/AgentController.php'
+      - 'app/Services/Agent/**'
+      - 'config/agent.php'
+      - 'config/filesystems.php'
       - 'tests/Feature/AgentApiTest.php'
+      - 'tests/Feature/AgentInstallerDownloadTest.php'
   workflow_dispatch:
 
 jobs:
   build-windows-agent:
     runs-on: windows-latest
 
-    env:
-      SERVICE_PUBLISH_DIR: ${{ github.workspace }}\artifacts\publish\service
-      CONFIG_PUBLISH_DIR: ${{ github.workspace }}\artifacts\publish\config
-      TEST_RESULTS_DIR: ${{ github.workspace }}\artifacts\test-results
-      ASSETS_DIR: ${{ github.workspace }}\agent\assets
+    defaults:
+      run:
+        working-directory: agent
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET 8 SDK
-        uses: actions/setup-dotnet@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          dotnet-version: 8.0.x
+          node-version: 20
 
-      - name: Restore agent solution
-        run: dotnet restore agent/InfraControl.Agent.sln
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
-      - name: Build agent solution
-        run: dotnet build agent/InfraControl.Agent.sln --configuration Release --no-restore
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Test agent solution
-        run: dotnet test agent/tests/InfraControl.Agent.Tests/InfraControl.Agent.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=InfraControl.Agent.Tests.trx" --results-directory "${{ env.TEST_RESULTS_DIR }}"
+      - name: Test agent
+        run: pnpm test
 
-      - name: Publish Windows service
-        run: dotnet publish agent/src/InfraControl.Agent.Service/InfraControl.Agent.Service.csproj --configuration Release --no-build --runtime win-x64 --self-contained true /p:PublishSingleFile=true --output "${{ env.SERVICE_PUBLISH_DIR }}"
+      - name: Build release bundle
+        run: pnpm run build
 
-      - name: Publish config app
-        run: dotnet publish agent/src/InfraControl.Agent.Config/InfraControl.Agent.Config.csproj --configuration Release --no-build --runtime win-x64 --self-contained true /p:PublishSingleFile=true --output "${{ env.CONFIG_PUBLISH_DIR }}"
+      - name: Install Inno Setup
+        run: choco install innosetup -y
 
-      - name: Build MSI
-        run: dotnet build agent/installer/InfraControl.Agent.Setup.wixproj --configuration Release -p:ServicePublishDir="${{ env.SERVICE_PUBLISH_DIR }}" -p:ConfigPublishDir="${{ env.CONFIG_PUBLISH_DIR }}" -p:AssetsDir="${{ env.ASSETS_DIR }}"
+      - name: Build installer
+        run: pnpm run build:installer
 
-      - name: Upload service artifact
+      - name: Upload release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: infracontrol-agent-service
-          path: ${{ env.SERVICE_PUBLISH_DIR }}
+          name: infracontrol-agent-bundle
+          path: agent/dist
 
-      - name: Upload config artifact
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: infracontrol-agent-config
-          path: ${{ env.CONFIG_PUBLISH_DIR }}
+          name: infracontrol-agent-installer
+          path: agent/dist/installer/InfraControl.Agent.Setup.exe
 
-      - name: Upload MSI artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: infracontrol-agent-msi
-          path: agent/installer/bin/Release/**/*.msi
+      - name: Publish installer to MinIO
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        shell: bash
+        working-directory: .
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.MINIO_REGION || 'us-east-1' }}
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+          AGENT_INSTALLER_OBJECT_KEY: ${{ vars.AGENT_INSTALLER_OBJECT_KEY || 'agents/InfraControl.Agent.Setup.exe' }}
+        run: |
+          if [ -z "$MINIO_ENDPOINT" ] || [ -z "$MINIO_BUCKET" ]; then
+            echo "MinIO secrets not configured, skipping publish."
+            exit 0
+          fi
 
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: infracontrol-agent-test-results
-          path: ${{ env.TEST_RESULTS_DIR }}
+          pip install awscli --quiet
+          aws s3 cp "agent/dist/installer/InfraControl.Agent.Setup.exe" "s3://${MINIO_BUCKET}/${AGENT_INSTALLER_OBJECT_KEY}" \
+            --endpoint-url "$MINIO_ENDPOINT"

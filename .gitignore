@@ -33,6 +33,8 @@ docker-compose.local.yml
 /vendor
 agent/**/bin
 agent/**/obj
+agent/dist/
+agent/node_modules/
 _ide_helper.php
 Homestead.json
 Homestead.yaml
