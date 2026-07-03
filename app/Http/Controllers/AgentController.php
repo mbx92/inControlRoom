@@ -277,7 +277,7 @@ class AgentController extends Controller
 
         $plainAgentToken = 'agent_'.Str::random(48);
 
-        $agent = DB::transaction(function () use ($request, $validated, $token, $plainAgentToken) {
+        $agent = DB::transaction(function () use ($request, $validated, $token, $plainAgentToken, $inventoryAssetId) {
             $agent = Agent::query()
                 ->where('site_id', $token->site_id)
                 ->where('device_id', $validated['device_id'])

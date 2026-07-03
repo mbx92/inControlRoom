@@ -52,18 +52,19 @@ class AgentInstallerStorageTest extends TestCase
         $this->assertTrue(app(AgentInstallerStorage::class)->endpointLooksLikeCdn());
     }
 
-    public function test_public_download_url_uses_path_style_bucket_prefix(): void
+    public function test_static_public_download_url_uses_path_style_bucket_prefix(): void
     {
         config([
             'agent.installer.disk' => 'minio',
             'agent.installer.object_key' => 'agents/InfraControl.Agent.Setup.exe',
             'agent.installer.public_base_url' => 'https://cdn.example.com',
+            'agent.installer.prefer_signed_url' => false,
             'filesystems.disks.minio.bucket' => 'infracontrol-agent',
             'filesystems.disks.minio.endpoint' => 'http://minio.test:9000',
             'filesystems.disks.minio.use_path_style_endpoint' => true,
         ]);
 
-        $url = app(AgentInstallerStorage::class)->publicDownloadUrl();
+        $url = app(AgentInstallerStorage::class)->staticPublicDownloadUrl();
 
         $this->assertSame(
             'https://cdn.example.com/infracontrol-agent/agents/InfraControl.Agent.Setup.exe',
@@ -71,18 +72,19 @@ class AgentInstallerStorageTest extends TestCase
         );
     }
 
-    public function test_public_download_url_honors_explicit_override(): void
+    public function test_static_public_download_url_honors_explicit_override(): void
     {
         config([
             'agent.installer.disk' => 'minio',
             'agent.installer.public_url' => 'https://downloads.example.com/agent.exe',
+            'agent.installer.prefer_signed_url' => false,
             'filesystems.disks.minio.bucket' => 'infracontrol-agent',
             'filesystems.disks.minio.endpoint' => 'http://minio.test:9000',
         ]);
 
         $this->assertSame(
             'https://downloads.example.com/agent.exe',
-            app(AgentInstallerStorage::class)->publicDownloadUrl(),
+            app(AgentInstallerStorage::class)->staticPublicDownloadUrl(),
         );
     }
 }

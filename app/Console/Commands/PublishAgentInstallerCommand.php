@@ -56,8 +56,12 @@ class PublishAgentInstallerCommand extends Command
             $this->warn('Could not read object metadata from storage. Fix MINIO_ENDPOINT if Settings download also fails.');
         }
 
-        if ($publicUrl = $storage->publicDownloadUrl()) {
-            $this->line('Bucket URL: '.$publicUrl);
+        if ($publicUrl = $storage->shareableDownloadUrl($storage->exists())) {
+            $this->line('Shareable URL: '.$publicUrl['url']);
+
+            if ($publicUrl['expires_at']) {
+                $this->line('Expires at: '.$publicUrl['expires_at']);
+            }
         }
 
         return self::SUCCESS;

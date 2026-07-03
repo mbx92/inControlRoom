@@ -19,6 +19,8 @@ return [
         'version' => env('AGENT_INSTALLER_VERSION', '1.0.0'),
         'public_url' => env('AGENT_INSTALLER_PUBLIC_URL'),
         'public_base_url' => env('MINIO_PUBLIC_URL'),
+        'prefer_signed_url' => env('AGENT_INSTALLER_PREFER_SIGNED_URL', true),
+        'signed_url_ttl_minutes' => (int) env('AGENT_INSTALLER_SIGNED_URL_TTL_MINUTES', 1440),
     ],
 
 ];

@@ -35,12 +35,14 @@ class AgentInstallerStorage
      *     filename: string,
      *     size_bytes: int|null,
      *     last_modified_at: string|null,
-     *     bucket_download_url: string|null
+     *     bucket_download_url: string|null,
+     *     bucket_download_url_expires_at: string|null
      * }
      */
     public function present(): array
     {
         $available = $this->exists();
+        $shareable = $this->shareableDownloadUrl($available);
 
         return [
             'configured' => $this->isConfigured(),
@@ -49,7 +51,8 @@ class AgentInstallerStorage
             'filename' => $this->downloadFilename(),
             'size_bytes' => $available ? $this->size() : null,
             'last_modified_at' => $available ? $this->lastModified()?->toIso8601String() : null,
-            'bucket_download_url' => $this->publicDownloadUrl(),
+            'bucket_download_url' => $shareable['url'] ?? null,
+            'bucket_download_url_expires_at' => $shareable['expires_at'] ?? null,
         ];
     }
 
@@ -113,6 +116,63 @@ class AgentInstallerStorage
 
     public function publicDownloadUrl(): ?string
     {
+        return $this->shareableDownloadUrl($this->exists())['url'] ?? null;
+    }
+
+    /**
+     * @return array{url: string, expires_at: string|null}|null
+     */
+    public function shareableDownloadUrl(bool $installerAvailable = true): ?array
+    {
+        if (! $this->isConfigured()) {
+            return null;
+        }
+
+        if ($installerAvailable && $this->shouldUseSignedUrl()) {
+            $signed = $this->signedDownloadUrl();
+
+            if ($signed !== null) {
+                return $signed;
+            }
+        }
+
+        $staticUrl = $this->staticPublicDownloadUrl();
+
+        if ($staticUrl === null) {
+            return null;
+        }
+
+        return [
+            'url' => $staticUrl,
+            'expires_at' => null,
+        ];
+    }
+
+    /**
+     * @return array{url: string, expires_at: string}|null
+     */
+    public function signedDownloadUrl(): ?array
+    {
+        $ttlMinutes = max(5, (int) config('agent.installer.signed_url_ttl_minutes', 1440));
+        $expiresAt = now()->addMinutes($ttlMinutes);
+
+        $url = $this->runSafely(fn () => $this->disk()->temporaryUrl(
+            $this->objectKey(),
+            $expiresAt,
+        ));
+
+        if (! is_string($url) || $url === '') {
+            return null;
+        }
+
+        return [
+            'url' => $url,
+            'expires_at' => $expiresAt->toIso8601String(),
+        ];
+    }
+
+    public function staticPublicDownloadUrl(): ?string
+    {
         if (! $this->isConfigured()) {
             return null;
         }
@@ -139,6 +199,11 @@ class AgentInstallerStorage
         }
 
         return "{$baseUrl}/{$objectKey}";
+    }
+
+    private function shouldUseSignedUrl(): bool
+    {
+        return filter_var(config('agent.installer.prefer_signed_url', true), FILTER_VALIDATE_BOOL);
     }
 
     private function disk(): Filesystem

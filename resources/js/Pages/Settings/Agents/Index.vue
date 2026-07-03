@@ -22,6 +22,7 @@ const props = defineProps({
             size_bytes: null,
             last_modified_at: null,
             bucket_download_url: null,
+            bucket_download_url_expires_at: null,
         }),
     },
 });
@@ -170,9 +171,15 @@ async function copyBucketUrl() {
                 <div v-if="installer.bucket_download_url" class="mt-5 rounded-2xl border border-hairline bg-base-300 p-4">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                            <div class="text-caption text-muted">Bucket Download URL</div>
+                            <div class="text-caption text-muted">Shareable Download URL</div>
                             <p class="mt-2 text-body-sm text-muted">
-                                Link langsung dari bucket/CDN untuk dibagikan ke client tanpa melalui InfraControl.
+                                Link langsung ke installer di MinIO.
+                                <span v-if="installer.bucket_download_url_expires_at">
+                                    Berlaku sampai {{ formatDate(installer.bucket_download_url_expires_at) }}.
+                                </span>
+                                <span v-else>
+                                    Bucket masih private; gunakan tombol Download Installer di atas jika link ini ditolak.
+                                </span>
                             </p>
                         </div>
                         <div class="flex flex-wrap gap-2">

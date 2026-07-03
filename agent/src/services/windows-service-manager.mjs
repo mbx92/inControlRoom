@@ -41,12 +41,25 @@ export function createWindowsServiceManager(serviceName) {
     },
 
     async stop() {
+      const snapshot = await this.getSnapshot();
+      if (!snapshot.installed) {
+        return;
+      }
+
+      if (snapshot.state === AgentServiceState.Stopped) {
+        return;
+      }
+
       try {
         await execFileAsync('sc', ['stop', serviceName], { windowsHide: true });
       } catch (error) {
         const stderr = error?.stderr?.toString?.() ?? '';
         if (/Access is denied|FAILED 5/i.test(stderr)) {
           throw new Error('Access denied. Stop the service from an elevated InfraControl Agent Config window or an Administrator PowerShell.');
+        }
+
+        if (/has not been started|FAILED 1062/i.test(stderr)) {
+          return;
         }
 
         throw new Error(stderr.trim() || error.message || 'Failed to stop service.');

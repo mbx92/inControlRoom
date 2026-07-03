@@ -84,8 +84,12 @@ async function routeRequest(request, response) {
   if (request.method === 'POST' && url.pathname === '/api/config') {
     const body = await readJsonBody(request);
     const current = await configurationStore.load();
+    const enrollmentToken = normalize(body.enrollment_token);
     current.serverUrl = normalize(body.server_url);
-    current.enrollmentToken = normalize(body.enrollment_token);
+    current.enrollmentToken = enrollmentToken;
+    if (enrollmentToken) {
+      current.agentToken = null;
+    }
     await configurationStore.save(current);
     return sendJson(response, 200, { ok: true, message: 'Configuration saved' });
   }
